@@ -25,8 +25,8 @@ import java.util.stream.Collectors;
 
 public class IndexingProcessor {
 
-    private static String dumpPath = Constants.WIKIDUMP_DIR + "out/";
-    private static String blockDir = Constants.WIKIDUMP_DIR + "blockTempDir/";
+    private static String dumpPath = Constants.WIKIDUMP_RAW_DIR + "out/";
+    private static String blockDir = Constants.WIKIDUMP_RAW_DIR + "blockTempDir/";
     private static String blockName = "block";
 
 
@@ -34,7 +34,7 @@ public class IndexingProcessor {
     private static Pattern htmlTagsAndSymbolsRegex = Pattern.compile("(&lt;.*?&gt;|<.*?>|&amp(nbsp)?|&quot|&lt|&gt|[№\\.,()—;:\\[\\]\\{\\}\\*\\%\\\"\\'„“‘’«»\\#\\$\\+\\/\\\\!?…])");
     private static Pattern blockDocPattern = Pattern.compile("(\\d+) \\[(.*)\\]");
 
-    private static int oneBlockTerms = 500000;
+    private static int oneBlockTerms = 1000000;
 
     private TreeMap<Integer, Set<Integer>> indexTmpMap = new TreeMap<>();
 
@@ -100,8 +100,6 @@ public class IndexingProcessor {
                     }
                 }
                 System.out.println("Terms: " + termDictionary.size());
-                if(termDictionary.size() > 1000000)
-                    break;////
             }
         }
         lastBlockId++;
@@ -109,11 +107,11 @@ public class IndexingProcessor {
                 map(entry -> entry.getKey() + " " + entry.getValue().toString()).
                 collect(Collectors.joining("\n")), "UTF-8");
 
-        try(ObjectOutputStream termToFileWriter = new ObjectOutputStream(new FileOutputStream(Constants.TERM_DICTIONARY_PATH))){
+        try(ObjectOutputStream termToFileWriter = new ObjectOutputStream(new FileOutputStream(new File(Constants.TERM_DICTIONARY_PATH)))){
             termToFileWriter.writeObject(termDictionary);
         }
 
-        try(ObjectOutputStream titlesToFileWriter = new ObjectOutputStream(new FileOutputStream(Constants.DOCS_TITLES_PATH))){
+        try(ObjectOutputStream titlesToFileWriter = new ObjectOutputStream(new FileOutputStream(new File(Constants.DOCS_TITLES_PATH)))){
             titlesToFileWriter.writeObject(docsTitleMap);
         }
 
@@ -138,7 +136,7 @@ public class IndexingProcessor {
         }
 
         try(RandomAccessFile memoryMappedFile = new RandomAccessFile(Constants.RESULT_INDEX_PATH, "rw");
-            ObjectOutputStream indexLinksOutput = new ObjectOutputStream(new FileOutputStream(Constants.INDEX_LINKS_PATH))) {
+            ObjectOutputStream indexLinksOutput = new ObjectOutputStream(new FileOutputStream(new File(Constants.INDEX_LINKS_PATH)))) {
 
             MappedByteBuffer out;
             long currentByte = 0;

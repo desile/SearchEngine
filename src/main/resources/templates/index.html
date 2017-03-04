@@ -5,6 +5,16 @@
     <title>Title</title>
 </head>
 <body>
-<p th:text="'Hello, ' + ${name} + '!'"/>
+<h2 th:text="'Hello, I am search engine!'"></h2>
+
+<form>
+    <input type="text" th:value="${query}" name="query"/>
+    <input type="submit" value="search"/>
+</form>
+
+<div id="searchResult" th:each="doc : ${res}">
+    <a th:href="'https://ru.wikipedia.org/?curid=' + ${doc.id}" th:text="${doc.title}"/>
+</div>
+
 </body>
 </html>

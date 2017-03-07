@@ -107,6 +107,7 @@ public class IndexingProcessor {
                 map(entry -> entry.getKey() + " " + entry.getValue().toString()).
                 collect(Collectors.joining("\n")), "UTF-8");
 
+        //TODO: Serializing fucking slow - better make standard byte writing
         try(ObjectOutputStream termToFileWriter = new ObjectOutputStream(new FileOutputStream(new File(Constants.TERM_DICTIONARY_PATH)))){
             termToFileWriter.writeObject(termDictionary);
         }

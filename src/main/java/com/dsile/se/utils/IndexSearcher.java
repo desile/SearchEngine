@@ -10,9 +10,7 @@ import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.util.*;
 
-/**
- * Created by desile on 04.03.17.
- */
+
 public class IndexSearcher {
 
     private HashMap<String, Integer> termDictionary = new HashMap<>();
@@ -51,9 +49,14 @@ public class IndexSearcher {
             try(ObjectInputStream termReader = new ObjectInputStream(new FileInputStream(Constants.TERM_DICTIONARY_PATH));
                 ObjectInputStream titleReader = new ObjectInputStream(new FileInputStream(Constants.DOCS_TITLES_PATH));
                 ObjectInputStream linkReader = new ObjectInputStream(new FileInputStream(Constants.INDEX_LINKS_PATH))){
+                System.out.println("start loading");
                 termDictionary = (HashMap<String,Integer>)termReader.readObject();
+                System.out.println(termDictionary.size());
+                System.out.println("terms loaded");
                 termIndexLinks = (HashMap<Integer,Long>)linkReader.readObject();
+                System.out.println("links loaded");
                 docsTitleMap = (HashMap<Integer,String>)titleReader.readObject();
+                System.out.println("titles loaded");
             }
         }
     }
@@ -66,15 +69,11 @@ public class IndexSearcher {
         return docsTitleMap.keySet();
     }
 
+    //TODO: Make test and remove main
     public static void main(String[] args) throws IOException, ClassNotFoundException {
         IndexSearcher is = new IndexSearcher();
         SearchExpressionEvaluator see = new SearchExpressionEvaluator(is);
         is.lazyLoading();
-        System.out.println("loading complete");
-        for(int docId : see.evaluate("!Роза&&растение")){
-            System.out.println(docId + ": " + is.getDocTitleById(docId));
-        }
-
     }
 
 }

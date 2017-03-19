@@ -1,13 +1,18 @@
 package com.dsile.se;
 
 import java.util.*;
+import java.util.function.*;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import com.dsile.se.utils.IndexSearcher;
 import com.fathzer.soft.javaluator.*;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Component;
 
-public class SearchExpressionEvaluator extends AbstractEvaluator<Set<Integer>> {
+@Component
+public class SearchExpressionEvaluator extends AbstractEvaluator<Map<Integer, Float>> {
     /** The negate unary operator.*/
     public final static Operator NEGATE = new Operator("!", 1, Operator.Associativity.RIGHT, 3);
     /** The logical AND operator.*/
@@ -15,6 +20,7 @@ public class SearchExpressionEvaluator extends AbstractEvaluator<Set<Integer>> {
     /** The logical OR operator.*/
     public final static Operator OR = new Operator("||", 2, Operator.Associativity.LEFT, 1);
 
+    @Autowired
     private IndexSearcher indexSearcher;
 
     private static final Parameters PARAMETERS;
@@ -27,43 +33,56 @@ public class SearchExpressionEvaluator extends AbstractEvaluator<Set<Integer>> {
         PARAMETERS.addExpressionBracket(BracketPair.PARENTHESES);
     }
 
-    public SearchExpressionEvaluator(IndexSearcher indexSearcher) {
+    public SearchExpressionEvaluator(){
         super(PARAMETERS);
-        this.indexSearcher = indexSearcher;
     }
 
     @Override
-    protected Set<Integer> toValue(String literal, Object evaluationContext) {
+    protected Map<Integer, Float> toValue(String literal, Object evaluationContext) {
         return indexSearcher.findDocsWithWord(literal.toLowerCase());
     }
 
     @Override
-    protected Set<Integer> evaluate(Operator operator, Iterator<Set<Integer>> operands, Object evaluationContext) {
+    protected Map<Integer, Float> evaluate(Operator operator, Iterator<Map<Integer, Float>> operands, Object evaluationContext) {
         if (operator == NEGATE) {
-            return antiIntersection(indexSearcher.allDocs(),operands.next());
+            return antiIntersection(operands.next());
         } else if (operator == OR) {
-            Set<Integer> o1 = operands.next();
-            Set<Integer> o2 = operands.next();
+            Map<Integer, Float> o1 = operands.next();
+            Map<Integer, Float> o2 = operands.next();
             return union(o1,o2);
         } else if (operator == AND) {
-            Set<Integer> o1 = operands.next();
-            Set<Integer> o2 = operands.next();
+            Map<Integer, Float> o1 = operands.next();
+            Map<Integer, Float> o2 = operands.next();
             return intersection(o1,o2);
         } else {
             return super.evaluate(operator, operands, evaluationContext);
         }
     }
 
-    private Set<Integer> intersection(Set<Integer> s1, Set<Integer> s2){
-        return new TreeSet<>(s1.stream().filter(s2::contains).collect(Collectors.toSet()));
+    private Map<Integer, Float> intersection(Map<Integer, Float> s1, Map<Integer, Float> s2){
+        Map<Integer, Float> intersect = new HashMap<>();
+        for(Map.Entry<Integer, Float> e : s1.entrySet()){
+            if(s2.containsKey(e.getKey())){
+                intersect.put(e.getKey(),e.getValue() + s2.get(e.getKey()));
+            }
+        }
+        return intersect;
     }
 
-    private Set<Integer> antiIntersection(Set<Integer> s1, Set<Integer> s2){
-        return new TreeSet<>(s1.stream().filter(l -> !s2.contains(l)).collect(Collectors.toSet()));
+    private Map<Integer, Float> antiIntersection(Map<Integer, Float> s2){
+        return new HashMap<>(indexSearcher.allDocs().stream().filter(l -> !s2.containsKey(l)).collect(Collectors.toMap(k -> k, v -> 0f)));
     }
 
-    private Set<Integer> union(Set<Integer> s1, Set<Integer> s2){
-        return new TreeSet<>(Stream.concat(s1.stream(),s2.stream()).collect(Collectors.toSet()));
+    private Map<Integer, Float> union(Map<Integer, Float> s1, Map<Integer, Float> s2){
+        Map<Integer, Float> union = new HashMap<>(s2);
+        for(Map.Entry<Integer, Float> e : s1.entrySet()){
+            if(s2.containsKey(e.getKey())){
+                union.put(e.getKey(),e.getValue() + s2.get(e.getKey()));
+            } else {
+                union.put(e.getKey(), e.getValue());
+            }
+        }
+        return union;
     }
 
 }

@@ -1,6 +1,7 @@
 package com.dsile.se.utils;
 
 import com.dsile.se.SearchExpressionEvaluator;
+import org.springframework.stereotype.Component;
 
 import java.io.FileInputStream;
 import java.io.IOException;
@@ -11,15 +12,16 @@ import java.nio.channels.FileChannel;
 import java.util.*;
 
 
+@Component
 public class IndexSearcher {
 
     private HashMap<String, Integer> termDictionary = new HashMap<>();
     private HashMap<Integer,Long> termIndexLinks = new HashMap<>();
     private HashMap<Integer,String> docsTitleMap = new HashMap<>();
 
-    public Set<Integer> findDocsWithWord(String word) {
+    public SortedMap<Integer,Float> findDocsWithWord(String word) {
 
-        Set<Integer> resultDocs = new HashSet<>();
+        SortedMap<Integer,Float> resultDocs = new TreeMap<>();
 
         try {
             try(RandomAccessFile memoryMappedFile = new RandomAccessFile(Constants.RESULT_INDEX_PATH, "r")){
@@ -32,8 +34,10 @@ public class IndexSearcher {
                 long bufferSize = in.getInt();
                 System.out.println(bufferSize/Integer.BYTES);
                 in = memoryMappedFile.getChannel().map(FileChannel.MapMode.READ_ONLY, place + Integer.BYTES , bufferSize);
-                for(int i = 0; i < bufferSize; i += Integer.BYTES){
-                    resultDocs.add(in.getInt());
+                for(int i = 0; i < bufferSize; i += (Integer.BYTES + Float.BYTES)){
+                    int docId = in.getInt();
+                    float tfIdf = in.getFloat();
+                    resultDocs.put(docId, tfIdf);
                 }
             }
         } catch (IOException e) {
@@ -67,13 +71,6 @@ public class IndexSearcher {
 
     public Set<Integer> allDocs(){
         return docsTitleMap.keySet();
-    }
-
-    //TODO: Make test and remove main
-    public static void main(String[] args) throws IOException, ClassNotFoundException {
-        IndexSearcher is = new IndexSearcher();
-        SearchExpressionEvaluator see = new SearchExpressionEvaluator(is);
-        is.lazyLoading();
     }
 
 }

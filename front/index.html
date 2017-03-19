@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:v-on="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta charset="utf-8">
+    <title>SE</title>
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0-alpha.6/css/bootstrap.min.css" crossorigin="anonymous">
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.1.1/jquery.min.js"></script>
+    <script src="//cdnjs.cloudflare.com/ajax/libs/tether/1.4.0/js/tether.min.js"></script>
+    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0-alpha.6/js/bootstrap.min.js" crossorigin="anonymous"></script>
+    <style>
+      h1{
+        margin-bottom: 15px;
+      }
+
+      .searchResult:hover{
+         background-color:  #e6f2ff;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <div class="jumbotron">
+        <div class="container">
+          <center><h1>{{ msg }}</h1></center>
+          <div class="input-group">
+            <div class="input-group-addon">&gt;</div>
+            <input v-model="searchQuery" v-on:keyup.enter="executeSearchQuery" type="search" class="form-control">
+            <select class="form-control col-2" v-model="searchType" name="search">
+              <option value="boolean">Boolean</option>
+              <option value="tf_idf" selected="selected">TF-IDF</option>
+            </select>
+            <span class="input-group-btn">
+          <button v-on:click="executeSearchQuery" class="btn btn-primary" type="button"><span class="glyphicon glyphicon-search" aria-hidden="true">
+          </span> Search!</button>
+          </span>
+          </div>
+        </div>
+      </div>
+
+      <div class="container">
+        <ol>
+            <li style="height:26px;line-height:18px;" v-for="(res, index) in searchResult">
+              <div class="row searchResult" style="margin: auto;">
+              <div class="col-9">
+                <a :href="'https://ru.wikipedia.org/?curid=' + res.id">{{ res.title }}</a>
+              </div>
+              <div v-if="showCoef" class="col-3">
+                {{ res.tfIdf }}
+              </div>
+              </div>
+            </li>
+        </ol>
+
+        <ul class="pagination" v-if="resultSize>0" style="margin: auto;">
+          <li class="page-item">
+            <a class="page-link" href="#" aria-label="Previous">
+              <span aria-hidden="true">&laquo;</span>
+              <span class="sr-only">Previous</span>
+            </a>
+          </li>
+          <li class="page-item" v-for="n in pageCount">
+            <a class="page-link" href="#">{{ n }}</a>
+          </li>
+          <li class="page-item">
+            <a class="page-link" href="#" aria-label="Next">
+              <span aria-hidden="true">&raquo;</span>
+              <span class="sr-only">Next</span>
+            </a>
+          </li>
+        </ul>
+
+      </div>
+    </div>
+    <script src="/dist/build.js"></script>
+  </body>
+</html>

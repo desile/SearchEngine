@@ -1,6 +1,5 @@
 package com.dsile.se.utils;
 
-import com.dsile.se.SearchExpressionEvaluator;
 import org.springframework.stereotype.Component;
 
 import java.io.FileInputStream;
@@ -19,6 +18,7 @@ public class IndexSearcher {
     private HashMap<Integer,Long> termIndexLinks = new HashMap<>();
     private HashMap<Integer,String> docsTitleMap = new HashMap<>();
 
+    @Deprecated
     public SortedMap<Integer,Float> findDocsWithWord(String word) {
 
         SortedMap<Integer,Float> resultDocs = new TreeMap<>();
@@ -38,6 +38,41 @@ public class IndexSearcher {
                     int docId = in.getInt();
                     float tfIdf = in.getFloat();
                     resultDocs.put(docId, tfIdf);
+                }
+            }
+        } catch (IOException e) {
+            System.out.println(e);//TODO: Logging
+            return resultDocs;
+        }
+
+        return resultDocs;
+    }
+
+    public SortedMap<Integer,Float> findDocsWithWord(List<String> words) {
+
+        SortedMap<Integer,Float> resultDocs = new TreeMap<>();
+
+        try {
+            try(RandomAccessFile memoryMappedFile = new RandomAccessFile(Constants.RESULT_INDEX_PATH, "r")){
+                for(String word : words) {
+                    System.out.println("index: " + termDictionary.get(word));
+                    if (termDictionary.get(word) == null) {
+                        return resultDocs;
+                    }
+                    long place = termIndexLinks.get(termDictionary.get(word));
+                    MappedByteBuffer in = memoryMappedFile.getChannel().map(FileChannel.MapMode.READ_ONLY, place, Integer.BYTES);
+                    long bufferSize = in.getInt();
+                    System.out.println(bufferSize / Integer.BYTES);
+                    in = memoryMappedFile.getChannel().map(FileChannel.MapMode.READ_ONLY, place + Integer.BYTES, bufferSize);
+                    for (int i = 0; i < bufferSize; i += (Integer.BYTES + Float.BYTES)) {
+                        int docId = in.getInt();
+                        float tfIdf = in.getFloat();
+                        if(resultDocs.containsKey(docId)){
+                            resultDocs.put(docId, resultDocs.get(docId) + tfIdf);
+                        } else {
+                            resultDocs.put(docId, tfIdf);
+                        }
+                    }
                 }
             }
         } catch (IOException e) {

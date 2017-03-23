@@ -1,5 +1,6 @@
 package com.dsile.se;
 
+import java.io.IOException;
 import java.util.*;
 import java.util.function.*;
 import java.util.function.Function;
@@ -8,6 +9,8 @@ import java.util.stream.Stream;
 
 import com.dsile.se.utils.IndexSearcher;
 import com.fathzer.soft.javaluator.*;
+import org.apache.lucene.morphology.WrongCharaterException;
+import org.apache.lucene.morphology.russian.RussianLuceneMorphology;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
@@ -22,6 +25,7 @@ public class SearchExpressionEvaluator extends AbstractEvaluator<Map<Integer, Fl
 
     @Autowired
     private IndexSearcher indexSearcher;
+    private RussianLuceneMorphology rusmorph;
 
     private static final Parameters PARAMETERS;
 
@@ -35,11 +39,25 @@ public class SearchExpressionEvaluator extends AbstractEvaluator<Map<Integer, Fl
 
     public SearchExpressionEvaluator(){
         super(PARAMETERS);
+
+        try {
+            rusmorph = new RussianLuceneMorphology();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
     }
 
     @Override
     protected Map<Integer, Float> toValue(String literal, Object evaluationContext) {
-        return indexSearcher.findDocsWithWord(literal.toLowerCase());
+        List<String> normalForms;
+        try {
+            normalForms = rusmorph.getNormalForms(literal.toLowerCase());
+        } catch (WrongCharaterException wce){
+            normalForms = Collections.singletonList(literal);
+        }
+
+        return indexSearcher.findDocsWithWord(normalForms);
+
     }
 
     @Override

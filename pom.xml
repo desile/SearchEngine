@@ -13,6 +13,17 @@
         <version>1.5.1.RELEASE</version>
     </parent>
 
+    <repositories>
+        <repository>
+            <snapshots>
+                <enabled>false</enabled>
+            </snapshots>
+            <id>bintray</id>
+            <name>bintray</name>
+            <url>http://dl.bintray.com/imotov/elasticsearch-plugins</url>
+        </repository>
+    </repositories>
+
     <dependencies>
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -50,6 +61,14 @@
             <artifactId>javaluator</artifactId>
             <version>3.0.1</version>
         </dependency>
+
+        <dependency>
+            <groupId>org.motovs.lucene.morphology</groupId>
+            <artifactId>russian</artifactId>
+            <version>4.6.0</version>
+            <scope>compile</scope>
+        </dependency>
+
         <dependency>
             <groupId>junit</groupId>
             <artifactId>junit</artifactId>

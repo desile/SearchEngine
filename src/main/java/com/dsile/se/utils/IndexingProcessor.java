@@ -2,6 +2,8 @@ package com.dsile.se.utils;
 
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.filefilter.TrueFileFilter;
+import org.apache.lucene.morphology.WrongCharaterException;
+import org.apache.lucene.morphology.russian.RussianLuceneMorphology;
 
 import java.io.*;
 import java.nio.MappedByteBuffer;
@@ -20,6 +22,8 @@ public class IndexingProcessor {
     private static String blockDir = Constants.WIKIDUMP_RAW_DIR + "blockTempDir/";
     private static String blockName = "block";
 
+    private RussianLuceneMorphology rusmorph;
+
 
     private static Pattern docHeaderRegex = Pattern.compile("<doc id=\"(.*)\" url=\"(.*)\" title=\"(.*)\">");
     private static Pattern htmlTagsAndSymbolsRegex = Pattern.compile("(&lt;.*?&gt;|<.*?>|&amp(nbsp)?|&quot|&lt|&gt|[№\\.,()—;:\\[\\]\\{\\}\\*\\%\\\"\\'„“‘’«»\\#\\$\\+\\/\\\\!?…])");
@@ -35,7 +39,14 @@ public class IndexingProcessor {
     private HashMap<Integer,Long> termIndexLinks = new HashMap<>();
     private HashMap<Integer,String> docsTitleMap = new HashMap<>();
     private HashMap<String, Integer> wordsRates = new HashMap<>();
-    private HashMap<Integer, Integer> docsWordsCount = new HashMap<>();
+
+    public IndexingProcessor(){
+        try {
+            rusmorph = new RussianLuceneMorphology();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
 
     public void clearBlocksAndIndexes() throws IOException {
         for (File block : FileUtils.listFiles(new File(blockDir), TrueFileFilter.INSTANCE, TrueFileFilter.INSTANCE)) {
@@ -65,7 +76,6 @@ public class IndexingProcessor {
                         if (matcher.matches()) {
                             docId = Integer.parseInt(matcher.group(1));
                             docsTitleMap.put(docId,matcher.group(3));
-                            docsWordsCount.put(docId, 0);
                         } else {
                             rawLine = line.replaceAll(htmlTagsAndSymbolsRegex.pattern(), "");
                             for (String word : rawLine.split("[\\u00A0\\s\\uFFFC]+")) {
@@ -75,28 +85,40 @@ public class IndexingProcessor {
                                     continue;
                                 }
 
-                                if (termDictionary.get(rawWord) == null) {
-                                    lastTermId++;
-                                    termDictionary.put(rawWord, lastTermId);
+                                List<String> normalForms;
+                                try{
+                                    normalForms = rusmorph.getNormalForms(rawWord);
+                                } catch (WrongCharaterException wce){
+                                    normalForms = Collections.singletonList(rawWord);
                                 }
 
-                                if(!wordsRates.containsKey(rawWord)){
-                                    wordsRates.put(rawWord,1);
-                                } else {
-                                    wordsRates.put(rawWord, wordsRates.get(rawWord)+1);
-                                }
+                                //In case of several normal forms of word we will write it all to index
+                                //may be it will be better if we will take and write only one?
+                                for(String token : normalForms){
+                                    if(token == null || token.isEmpty()){
+                                        continue;
+                                    }
 
+                                    if (termDictionary.get(token) == null) {
+                                        lastTermId++;
+                                        termDictionary.put(token, lastTermId);
+                                    }
 
-                                docsWordsCount.put(docId, docsWordsCount.get(docId) + 1);
+                                    if(!wordsRates.containsKey(token)){
+                                        wordsRates.put(token,1);
+                                    } else {
+                                        wordsRates.put(token, wordsRates.get(token)+1);
+                                    }
 
-                                Integer termId = termDictionary.get(rawWord);
-                                indexTmpMap.computeIfAbsent(termId, k -> new HashMap<>());
+                                    Integer termId = termDictionary.get(token);
+                                    indexTmpMap.computeIfAbsent(termId, k -> new HashMap<>());
 
-                                Integer currentTermInDoc = indexTmpMap.get(termId).get(docId);
-                                if(currentTermInDoc != null){
-                                    indexTmpMap.get(termId).put(docId,currentTermInDoc+1);
-                                } else {
-                                    indexTmpMap.get(termId).put(docId,1);
+                                    Integer currentTermInDoc = indexTmpMap.get(termId).get(docId);
+                                    if(currentTermInDoc != null){
+                                        indexTmpMap.get(termId).put(docId,currentTermInDoc+1);
+                                    } else {
+                                        indexTmpMap.get(termId).put(docId,1);
+                                    }
                                 }
 
 
@@ -115,6 +137,7 @@ public class IndexingProcessor {
                     }
                 }
                 System.out.println("Terms: " + termDictionary.size());
+                break;
             }
         }
         lastBlockId++;

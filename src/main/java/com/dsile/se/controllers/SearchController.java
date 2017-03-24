@@ -43,7 +43,7 @@ public class SearchController {
             System.out.println("Не удалось выполнить загрузку словарей");
         }
 
-        List<DocumentDto> findingDocs = see.evaluate(formatedQuery, searchType).entrySet().stream().map(docId -> new DocumentDto(docId.getKey(), is.getDocTitleById(docId.getKey()), docId.getValue())).collect(Collectors.toList());
+        List<DocumentDto> findingDocs = see.evaluate(formatedQuery, searchType).entrySet().stream().map(docId -> new DocumentDto(docId.getKey(), is.getDocTitleById(docId.getKey()), docId.getValue().getTfIdf())).collect(Collectors.toList());
         int resultSize = findingDocs.size();
 
         switch (searchType) {

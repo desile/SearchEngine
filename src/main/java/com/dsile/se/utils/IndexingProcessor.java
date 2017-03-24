@@ -1,5 +1,6 @@
 package com.dsile.se.utils;
 
+import com.dsile.se.dto.IndexTermRecord;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.filefilter.TrueFileFilter;
 import org.apache.lucene.morphology.WrongCharaterException;
@@ -31,7 +32,8 @@ public class IndexingProcessor {
 
     private static int oneBlockTerms = 1000000;
 
-    private TreeMap<Integer, HashMap<Integer, Integer>> indexTmpMap = new TreeMap<>();
+    //структура термID - мап<документ, <список позиций термы>>
+    private TreeMap<Integer, HashMap<Integer, LinkedList<Integer>>> indexTmpMap = new TreeMap<>();
 
     private Integer lastTermId = 0;
     private Integer lastBlockId = 0;
@@ -62,6 +64,7 @@ public class IndexingProcessor {
 
     public void process() throws IOException {
         Integer i = 0;
+        int docWordIterator = 0;
         for (File dir : FileUtils.listFilesAndDirs(new File(dumpPath), TrueFileFilter.INSTANCE, TrueFileFilter.INSTANCE)) {
             if (dir.isDirectory() && !dir.getName().equals("out")) {
                 System.out.println("DIR: " + dir.getName());
@@ -76,6 +79,7 @@ public class IndexingProcessor {
                         if (matcher.matches()) {
                             docId = Integer.parseInt(matcher.group(1));
                             docsTitleMap.put(docId,matcher.group(3));
+                            docWordIterator = 0;
                         } else {
                             rawLine = line.replaceAll(htmlTagsAndSymbolsRegex.pattern(), "");
                             for (String word : rawLine.split("[\\u00A0\\s\\uFFFC]+")) {
@@ -92,12 +96,11 @@ public class IndexingProcessor {
                                     normalForms = Collections.singletonList(rawWord);
                                 }
 
+                                docWordIterator++;
+
                                 //In case of several normal forms of word we will write it all to index
                                 //may be it will be better if we will take and write only one?
                                 for(String token : normalForms){
-                                    if(token == null || token.isEmpty()){
-                                        continue;
-                                    }
 
                                     if (termDictionary.get(token) == null) {
                                         lastTermId++;
@@ -113,12 +116,12 @@ public class IndexingProcessor {
                                     Integer termId = termDictionary.get(token);
                                     indexTmpMap.computeIfAbsent(termId, k -> new HashMap<>());
 
-                                    Integer currentTermInDoc = indexTmpMap.get(termId).get(docId);
-                                    if(currentTermInDoc != null){
-                                        indexTmpMap.get(termId).put(docId,currentTermInDoc+1);
-                                    } else {
-                                        indexTmpMap.get(termId).put(docId,1);
+                                    if(!indexTmpMap.get(termId).containsKey(docId)){
+                                        indexTmpMap.get(termId).put(docId, new LinkedList<>());
                                     }
+
+                                    indexTmpMap.get(termId).get(docId).push(docWordIterator);
+
                                 }
 
 
@@ -127,7 +130,7 @@ public class IndexingProcessor {
                                     lastBlockId++;
                                     FileUtils.write(new File(blockDir + blockName + lastBlockId), indexTmpMap.entrySet().stream().
                                             map(entry -> entry.getKey() + " [" + entry.getValue().entrySet()
-                                                    .stream().map(docs -> docs.getKey() + "," + docs.getValue() ).collect(Collectors.joining("|")) + "]").
+                                                    .stream().map(docs -> docs.getKey() + "," + docs.getValue().stream().map(Object::toString).collect(Collectors.joining(",")) ).collect(Collectors.joining("|")) + "]").
                                             collect(Collectors.joining("\n")), "UTF-8");
                                     System.out.println("block" + lastBlockId + " created!");
                                     indexTmpMap.clear();
@@ -143,7 +146,7 @@ public class IndexingProcessor {
         lastBlockId++;
         FileUtils.write(new File(blockDir + blockName + lastBlockId), indexTmpMap.entrySet().stream().
                 map(entry -> entry.getKey() + " [" + entry.getValue().entrySet()
-                        .stream().map(docs -> docs.getKey() + "," + docs.getValue() ).collect(Collectors.joining("|")) + "]").
+                        .stream().map(docs -> docs.getKey() + "," + docs.getValue().stream().map(Object::toString).collect(Collectors.joining(",")) ).collect(Collectors.joining("|")) + "]").
                 collect(Collectors.joining("\n")), "UTF-8");
 
 
@@ -181,9 +184,9 @@ public class IndexingProcessor {
         }
 
         try(RandomAccessFile memoryMappedFile = new RandomAccessFile(Constants.RESULT_INDEX_PATH, "rw");
+            DataOutputStream out = new DataOutputStream(new BufferedOutputStream(new FileOutputStream(new File(Constants.RESULT_INDEX_PATH))));
             ObjectOutputStream indexLinksOutput = new ObjectOutputStream(new FileOutputStream(new File(Constants.INDEX_LINKS_PATH)))) {
 
-            MappedByteBuffer out;
             long currentByte = 0;
 
             while (true) {
@@ -211,25 +214,32 @@ public class IndexingProcessor {
                     }
                 }
 
-                HashMap<Integer,Float> resultSet = new HashMap<>();
+                //структура docId, tfIdf, list<positions>
+                TreeSet<IndexTermRecord> resultSet = new TreeSet<>();
                 for (int indexWithMinId : indexesWithMinId) {
                     String[] docPairs = matchers.get(indexWithMinId).group(2).split("\\|");
                     for(String s : docPairs){
                         String[] docMeta = s.split(",");
-                        resultSet.put(Integer.parseInt(docMeta[0]),(float)Integer.parseInt(docMeta[1]));
+                        resultSet.add(new IndexTermRecord(Arrays.stream(docMeta).map(Integer::parseInt).collect(Collectors.toList())));
                     }
                 }
 
                 double IDF = Math.log(((double)docsTitleMap.size())/resultSet.size());
-                resultSet.replaceAll((k,v) -> (float)(IDF * (1 + Math.log(v))));
 
-                int bufferSize = (Integer.BYTES + resultSet.size() * (Integer.BYTES + Float.BYTES));
-                out = memoryMappedFile.getChannel().map(FileChannel.MapMode.READ_WRITE, currentByte, bufferSize);
-                out.putInt(bufferSize - Integer.BYTES);
+                int sumOfPositionSizes = resultSet.stream().mapToInt(IndexTermRecord::getPositionsSize).sum();
+                int bufferSize = (Integer.BYTES + resultSet.size() * (Integer.BYTES + Float.BYTES + Integer.BYTES) + Integer.BYTES * sumOfPositionSizes);
 
-                for(Map.Entry<Integer, Float> e : resultSet.entrySet()){
-                    out.putInt(e.getKey());
-                    out.putFloat(e.getValue());
+                System.out.println(bufferSize);
+
+                out.writeInt(bufferSize - Integer.BYTES);
+
+                for(IndexTermRecord e : resultSet){
+                    out.writeInt(e.getDocId());
+                    out.writeFloat((float)(IDF * e.calculateIf()));
+                    out.writeInt(e.getPositionsSize());
+                    for(int position : e.getPositions()){
+                        out.writeInt(position);
+                    }
                 }
 
                 termIndexLinks.put(minId, currentByte);

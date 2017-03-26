@@ -49,6 +49,10 @@ public class IndexTermRecord implements Comparable<IndexTermRecord>{
         return positionsSize;
     }
 
+    public void resetTfIdf(){
+        this.tfIdf = 0;
+    }
+
 
     @Override
     public int compareTo(IndexTermRecord indexTermRecord) {

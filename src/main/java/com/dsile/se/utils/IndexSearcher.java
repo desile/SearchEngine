@@ -3,10 +3,7 @@ package com.dsile.se.utils;
 import com.dsile.se.dto.IndexTermRecord;
 import org.springframework.stereotype.Component;
 
-import java.io.FileInputStream;
-import java.io.IOException;
-import java.io.ObjectInputStream;
-import java.io.RandomAccessFile;
+import java.io.*;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.util.*;
@@ -19,74 +16,73 @@ public class IndexSearcher {
     private HashMap<Integer, Long> termIndexLinks = new HashMap<>();
     private HashMap<Integer, String> docsTitleMap = new HashMap<>();
 
-    @Deprecated
-    public SortedMap<Integer, Float> findDocsWithWord(String word) {
 
-        SortedMap<Integer, Float> resultDocs = new TreeMap<>();
+    private boolean quoteRecursiveFinder(int wordNumber, int position, int connectivitiy, int wordCount, List<SortedMap<Integer, IndexTermRecord>> quoteDocs, int docId){
+        List<Integer> positions = quoteDocs.get(wordNumber).get(docId).getPositions();
 
-        try {
-            try (RandomAccessFile memoryMappedFile = new RandomAccessFile(Constants.RESULT_INDEX_PATH, "r")) {
-                System.out.println("index: " + termDictionary.get(word));
-                if (termDictionary.get(word) == null) {
-                    return resultDocs;
-                }
-                long place = termIndexLinks.get(termDictionary.get(word));
-                MappedByteBuffer in = memoryMappedFile.getChannel().map(FileChannel.MapMode.READ_ONLY, place, Integer.BYTES);
-                long bufferSize = in.getInt();
-                System.out.println(bufferSize/Integer.BYTES);
-                in = memoryMappedFile.getChannel().map(FileChannel.MapMode.READ_ONLY, place + Integer.BYTES , bufferSize);
-                for(int i = 0; i < bufferSize; i += (Integer.BYTES + Float.BYTES)){
-                    int docId = in.getInt();
-                    float tfIdf = in.getFloat();
-                    resultDocs.put(docId, tfIdf);
+        for (int i = 0; i < positions.size(); i++) {
+            if(positions.get(i) < position){
+                continue;//следующая позиция должна быть больше предыдущей
+            } else {
+                if(positions.get(i) <= (position + connectivitiy)){ //позиция должна быть больше, но при этом вписываться в окно
+                    if(wordNumber == wordCount - 1){ //если это последнее слово в цитате то выходим
+                        return true;
+                    } // если не последнее то ныряем дальше в рекурсию
+                    return quoteRecursiveFinder(wordNumber + 1,positions.get(i),connectivitiy,wordCount,quoteDocs,docId);
+                } else { // если она не вписалась в окно, то дальше позиции будут только больше можно выходить из рекурсии
+                    return false;
                 }
             }
-        } catch (IOException e) {
-            System.out.println(e);//TODO: Logging
-            return resultDocs;
         }
-
-        return resultDocs;
+        return false;
     }
+
+    private void collectRecordsFromIndexBlockByWord(String word, SortedMap<Integer, IndexTermRecord> newWord) throws IOException {
+        try (RandomAccessFile memoryMappedFile = new RandomAccessFile(Constants.RESULT_INDEX_PATH, "r")) {
+
+            System.out.println("index: " + termDictionary.get(word));
+            if (termDictionary.get(word) == null) {
+                return;
+            }
+
+            long place = termIndexLinks.get(termDictionary.get(word));
+            MappedByteBuffer in = memoryMappedFile.getChannel().map(FileChannel.MapMode.READ_ONLY, place, Integer.BYTES);
+            long bufferSize = in.getInt();
+            System.out.println(bufferSize / Integer.BYTES);
+            in = memoryMappedFile.getChannel().map(FileChannel.MapMode.READ_ONLY, place + Integer.BYTES, bufferSize);
+            List<Integer> positions = new LinkedList<>();
+            while (in.hasRemaining()) {
+                int docId = in.getInt();
+                float tfIdf = in.getFloat();
+                int posSize = in.getInt();
+                for (int j = 0; j < posSize; j++) {
+                    positions.add(in.getInt());
+                }
+
+                IndexTermRecord curRecord = newWord.get(docId);
+                if (curRecord != null) {
+                    curRecord.sumTfIdf(tfIdf);
+                } else {
+                    newWord.put(docId, new IndexTermRecord(docId, tfIdf, positions));
+                }
+                positions.clear();
+            }
+        }
+    }
+
+    private SortedMap<Integer, IndexTermRecord> collectRecordsFromIndexBlockByWord(String word) throws IOException {
+        SortedMap<Integer, IndexTermRecord> newWord = new TreeMap<>();
+        collectRecordsFromIndexBlockByWord(word, newWord);
+        return newWord;
+    }
+
 
     public SortedMap<Integer,IndexTermRecord> findDocsWithQuote(List<String> words, int connectivity) {
         List<SortedMap<Integer, IndexTermRecord>> quoteDocs = new LinkedList<>();
 
         try {
-            try (RandomAccessFile memoryMappedFile = new RandomAccessFile(Constants.RESULT_INDEX_PATH, "r")) {
-                for (String word : words) {
-                    SortedMap<Integer, IndexTermRecord> newWord = new TreeMap<>();
-
-                    System.out.println("index: " + termDictionary.get(word));
-                    if (termDictionary.get(word) == null) {
-                        return newWord;
-                    }
-
-                    long place = termIndexLinks.get(termDictionary.get(word));
-                    MappedByteBuffer in = memoryMappedFile.getChannel().map(FileChannel.MapMode.READ_ONLY, place, Integer.BYTES);
-                    long bufferSize = in.getInt();
-                    System.out.println(bufferSize / Integer.BYTES);
-                    in = memoryMappedFile.getChannel().map(FileChannel.MapMode.READ_ONLY, place + Integer.BYTES, bufferSize);
-                    List<Integer> positions = new LinkedList<>();
-                    while (in.hasRemaining()) {
-                        int docId = in.getInt();
-                        float tfIdf = in.getFloat();
-                        int posSize = in.getInt();
-                        for (int j = 0; j < posSize; j++) {
-                            positions.add(in.getInt());
-                        }
-
-                        IndexTermRecord curRecord = newWord.get(docId);
-                        if (curRecord != null) {
-                            curRecord.sumTfIdf(tfIdf);
-                        } else {
-                            newWord.put(docId, new IndexTermRecord(docId,tfIdf,positions));
-                        }
-                        positions.clear();
-                    }
-
-                    quoteDocs.add(newWord);
-                }
+            for (String word : words) {
+                quoteDocs.add(collectRecordsFromIndexBlockByWord(word));
             }
         } catch (IOException e) {
             System.out.println(e);//TODO: Logging
@@ -111,6 +107,7 @@ public class IndexSearcher {
         for(int docId : commonDocs){
             for(int i = 0; i < quoteDocs.get(0).get(docId).getPositions().size(); i++) {
                 if (quoteRecursiveFinder(1, quoteDocs.get(0).get(docId).getPositions().get(i), connectivity, quoteDocs.size(), quoteDocs, docId)) {
+                    quoteDocs.get(0).get(docId).resetTfIdf();
                     continue docCycle;
                 }
             }
@@ -120,61 +117,13 @@ public class IndexSearcher {
         return quoteDocs.get(0);
     }
 
-    private boolean quoteRecursiveFinder(int wordNumber, int position, int connectivitiy, int wordCount, List<SortedMap<Integer, IndexTermRecord>> quoteDocs, int docId){
-        List<Integer> positions = quoteDocs.get(wordNumber).get(docId).getPositions();
-
-
-        for (int i = 0; i < positions.size(); i++) {
-            if(positions.get(i) < position){
-                continue;//следующая позиция должна быть больше предыдущей
-            } else {
-                if(positions.get(i) <= (position + connectivitiy)){ //позиция должна быть больше, но при этом вписываться в окно
-                    if(wordNumber == wordCount - 1){ //если это последнее слово в цитате то выходим
-                        return true;
-                    } // если не последнее то ныряем дальше в рекурсию
-                    return quoteRecursiveFinder(wordNumber + 1,positions.get(i),connectivitiy,wordCount,quoteDocs,docId);
-                } else { // если она не вписалась в окно, то дальше позиции будут только больше можно выходить из рекурсии
-                    return false;
-                }
-            }
-        }
-        return false;
-    }
-
-    public SortedMap<Integer,IndexTermRecord> findDocsWithWord(List<String> words) {
+    public SortedMap<Integer,IndexTermRecord> findDocsWithWord(List<String> normalForms) {
 
         SortedMap<Integer, IndexTermRecord> resultDocs = new TreeMap<>();
 
         try {
-            try (RandomAccessFile memoryMappedFile = new RandomAccessFile(Constants.RESULT_INDEX_PATH, "r")) {
-                for (String word : words) {
-                    System.out.println("index: " + termDictionary.get(word));
-                    if (termDictionary.get(word) == null) {
-                        return resultDocs;
-                    }
-                    long place = termIndexLinks.get(termDictionary.get(word));
-                    MappedByteBuffer in = memoryMappedFile.getChannel().map(FileChannel.MapMode.READ_ONLY, place, Integer.BYTES);
-                    long bufferSize = in.getInt();
-                    System.out.println(bufferSize / Integer.BYTES);
-                    in = memoryMappedFile.getChannel().map(FileChannel.MapMode.READ_ONLY, place + Integer.BYTES, bufferSize);
-                    List<Integer> positions = new LinkedList<>();
-                    while (in.hasRemaining()) {
-                        int docId = in.getInt();
-                        float tfIdf = in.getFloat();
-                        int posSize = in.getInt();
-                        for (int j = 0; j < posSize; j++) {
-                            positions.add(in.getInt());
-                        }
-
-                        IndexTermRecord curRecord = resultDocs.get(docId);
-                        if (curRecord != null) {
-                            curRecord.sumTfIdf(tfIdf);
-                        } else {
-                            resultDocs.put(docId, new IndexTermRecord(docId,tfIdf,positions));
-                        }
-                        positions.clear();
-                    }
-                }
+            for (String word : normalForms) {
+                collectRecordsFromIndexBlockByWord(word,resultDocs);
             }
         } catch (IOException e) {
             System.out.println(e);//TODO: Logging

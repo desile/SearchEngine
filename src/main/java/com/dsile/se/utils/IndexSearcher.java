@@ -1,6 +1,6 @@
 package com.dsile.se.utils;
 
-import com.dsile.se.dto.IndexTermRecord;
+import com.dsile.se.dto.IndexDocumentRecord;
 import org.springframework.stereotype.Component;
 
 import java.io.*;
@@ -17,7 +17,7 @@ public class IndexSearcher {
     private HashMap<Integer, String> docsTitleMap = new HashMap<>();
 
 
-    private boolean quoteRecursiveFinder(int wordNumber, int position, int connectivitiy, int wordCount, List<SortedMap<Integer, IndexTermRecord>> quoteDocs, int docId){
+    private boolean quoteRecursiveFinder(int wordNumber, int position, int connectivitiy, int wordCount, List<SortedMap<Integer, IndexDocumentRecord>> quoteDocs, int docId){
         List<Integer> positions = quoteDocs.get(wordNumber).get(docId).getPositions();
 
         for (int i = 0; i < positions.size(); i++) {
@@ -28,7 +28,7 @@ public class IndexSearcher {
                     if(wordNumber == wordCount - 1){ //если это последнее слово в цитате то выходим
                         return true;
                     } // если не последнее то ныряем дальше в рекурсию
-                    return quoteRecursiveFinder(wordNumber + 1,positions.get(i),connectivitiy,wordCount,quoteDocs,docId);
+                    return quoteRecursiveFinder(wordNumber + 1,positions.get(i),connectivitiy - (positions.get(i) - position),wordCount,quoteDocs,docId);
                 } else { // если она не вписалась в окно, то дальше позиции будут только больше можно выходить из рекурсии
                     return false;
                 }
@@ -37,7 +37,7 @@ public class IndexSearcher {
         return false;
     }
 
-    private void collectRecordsFromIndexBlockByWord(String word, SortedMap<Integer, IndexTermRecord> newWord) throws IOException {
+    private void collectRecordsFromIndexBlockByWord(String word, SortedMap<Integer, IndexDocumentRecord> newWord) throws IOException {
         try (RandomAccessFile memoryMappedFile = new RandomAccessFile(Constants.RESULT_INDEX_PATH, "r")) {
 
             System.out.println("index: " + termDictionary.get(word));
@@ -59,26 +59,26 @@ public class IndexSearcher {
                     positions.add(in.getInt());
                 }
 
-                IndexTermRecord curRecord = newWord.get(docId);
+                IndexDocumentRecord curRecord = newWord.get(docId);
                 if (curRecord != null) {
                     curRecord.sumTfIdf(tfIdf);
                 } else {
-                    newWord.put(docId, new IndexTermRecord(docId, tfIdf, positions));
+                    newWord.put(docId, new IndexDocumentRecord(docId, tfIdf, positions));
                 }
                 positions.clear();
             }
         }
     }
 
-    private SortedMap<Integer, IndexTermRecord> collectRecordsFromIndexBlockByWord(String word) throws IOException {
-        SortedMap<Integer, IndexTermRecord> newWord = new TreeMap<>();
+    private SortedMap<Integer, IndexDocumentRecord> collectRecordsFromIndexBlockByWord(String word) throws IOException {
+        SortedMap<Integer, IndexDocumentRecord> newWord = new TreeMap<>();
         collectRecordsFromIndexBlockByWord(word, newWord);
         return newWord;
     }
 
 
-    public SortedMap<Integer,IndexTermRecord> findDocsWithQuote(List<String> words, int connectivity) {
-        List<SortedMap<Integer, IndexTermRecord>> quoteDocs = new LinkedList<>();
+    public SortedMap<Integer,IndexDocumentRecord> findDocsWithQuote(List<String> words, int connectivity) {
+        List<SortedMap<Integer, IndexDocumentRecord>> quoteDocs = new LinkedList<>();
 
         try {
             for (String word : words) {
@@ -117,9 +117,9 @@ public class IndexSearcher {
         return quoteDocs.get(0);
     }
 
-    public SortedMap<Integer,IndexTermRecord> findDocsWithWord(List<String> normalForms) {
+    public SortedMap<Integer,IndexDocumentRecord> findDocsWithWord(List<String> normalForms) {
 
-        SortedMap<Integer, IndexTermRecord> resultDocs = new TreeMap<>();
+        SortedMap<Integer, IndexDocumentRecord> resultDocs = new TreeMap<>();
 
         try {
             for (String word : normalForms) {

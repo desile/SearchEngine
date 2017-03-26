@@ -2,14 +2,11 @@ package com.dsile.se;
 
 import java.io.IOException;
 import java.util.*;
-import java.util.function.*;
-import java.util.function.Function;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
-import com.dsile.se.dto.IndexTermRecord;
+import com.dsile.se.dto.IndexDocumentRecord;
 import com.dsile.se.utils.IndexSearcher;
 import com.fathzer.soft.javaluator.*;
 import org.apache.lucene.morphology.WrongCharaterException;
@@ -18,7 +15,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 @Component
-public class SearchExpressionEvaluator extends AbstractEvaluator<Map<Integer, IndexTermRecord>> {
+public class SearchExpressionEvaluator extends AbstractEvaluator<Map<Integer, IndexDocumentRecord>> {
 
     private static final Pattern quoteRegex = Pattern.compile("\"(.*)\"(\\/(\\d+))?");
 
@@ -54,13 +51,9 @@ public class SearchExpressionEvaluator extends AbstractEvaluator<Map<Integer, In
     }
 
     @Override
-    protected Map<Integer, IndexTermRecord> toValue(String literal, Object evaluationContext) {
+    protected Map<Integer, IndexDocumentRecord> toValue(String literal, Object evaluationContext) {
         Matcher quoteMatch = quoteRegex.matcher(literal);
         if(quoteMatch.matches()){
-            int connectivity = 1;
-            if(quoteMatch.groupCount() == 3 && quoteMatch.group(3) != null){
-                connectivity = Integer.parseInt(quoteMatch.group(3)) + 1;
-            }
 
             String[] quote = quoteMatch.group(1).split(" ");
             List normalQuote = Arrays.stream(quote).map(q -> {
@@ -70,6 +63,11 @@ public class SearchExpressionEvaluator extends AbstractEvaluator<Map<Integer, In
                     return q.toLowerCase();
                 }
             }).collect(Collectors.toList());
+
+            int connectivity = normalQuote.size();
+            if(quoteMatch.groupCount() == 3 && quoteMatch.group(3) != null){
+                connectivity = Integer.parseInt(quoteMatch.group(3)) + 1;
+            }
 
             return indexSearcher.findDocsWithQuote(normalQuote,connectivity);
         } else {
@@ -84,7 +82,7 @@ public class SearchExpressionEvaluator extends AbstractEvaluator<Map<Integer, In
         }
     }
 
-    public Map<Integer, IndexTermRecord> parseAndEvaluate(String expression, Object evaluationContext){
+    public Map<Integer, IndexDocumentRecord> parseAndEvaluate(String expression, Object evaluationContext){
         StringBuilder formattedQuery = new StringBuilder();
         expression = expression.trim();
         boolean space = false;
@@ -122,25 +120,25 @@ public class SearchExpressionEvaluator extends AbstractEvaluator<Map<Integer, In
     }
 
     @Override
-    protected Map<Integer, IndexTermRecord> evaluate(Operator operator, Iterator<Map<Integer, IndexTermRecord>> operands, Object evaluationContext) {
+    protected Map<Integer, IndexDocumentRecord> evaluate(Operator operator, Iterator<Map<Integer, IndexDocumentRecord>> operands, Object evaluationContext) {
         if (operator == NEGATE) {
             return antiIntersection(operands.next());
         } else if (operator == OR) {
-            Map<Integer, IndexTermRecord> o1 = operands.next();
-            Map<Integer, IndexTermRecord> o2 = operands.next();
+            Map<Integer, IndexDocumentRecord> o1 = operands.next();
+            Map<Integer, IndexDocumentRecord> o2 = operands.next();
             return union(o1,o2);
         } else if (operator == AND) {
-            Map<Integer, IndexTermRecord> o1 = operands.next();
-            Map<Integer, IndexTermRecord> o2 = operands.next();
+            Map<Integer, IndexDocumentRecord> o1 = operands.next();
+            Map<Integer, IndexDocumentRecord> o2 = operands.next();
             return intersection(o1,o2);
         } else {
             return super.evaluate(operator, operands, evaluationContext);
         }
     }
 
-    private Map<Integer, IndexTermRecord> intersection(Map<Integer, IndexTermRecord> s1, Map<Integer, IndexTermRecord> s2){
-        Map<Integer, IndexTermRecord> union = new HashMap<>();
-        for(Map.Entry<Integer, IndexTermRecord> e : s1.entrySet()){
+    private Map<Integer, IndexDocumentRecord> intersection(Map<Integer, IndexDocumentRecord> s1, Map<Integer, IndexDocumentRecord> s2){
+        Map<Integer, IndexDocumentRecord> union = new HashMap<>();
+        for(Map.Entry<Integer, IndexDocumentRecord> e : s1.entrySet()){
             if(s2.containsKey(e.getKey())){
                 e.getValue().sumTfIdf(s2.get(e.getKey()).getTfIdf());
                 union.put(e.getKey(),e.getValue());
@@ -149,12 +147,12 @@ public class SearchExpressionEvaluator extends AbstractEvaluator<Map<Integer, In
         return union;
     }
 
-    private Map<Integer, IndexTermRecord> antiIntersection(Map<Integer, IndexTermRecord> s2){
-        return new HashMap<>(indexSearcher.allDocs().stream().filter(l -> !s2.containsKey(l)).collect(Collectors.toMap(k -> k, v -> new IndexTermRecord(v,0f,Collections.emptyList()))));
+    private Map<Integer, IndexDocumentRecord> antiIntersection(Map<Integer, IndexDocumentRecord> s2){
+        return new HashMap<>(indexSearcher.allDocs().stream().filter(l -> !s2.containsKey(l)).collect(Collectors.toMap(k -> k, v -> new IndexDocumentRecord(v,0f,Collections.emptyList()))));
     }
 
-    private Map<Integer, IndexTermRecord> union(Map<Integer, IndexTermRecord> s1, Map<Integer, IndexTermRecord> s2){
-        for(Map.Entry<Integer, IndexTermRecord> e : s1.entrySet()){
+    private Map<Integer, IndexDocumentRecord> union(Map<Integer, IndexDocumentRecord> s1, Map<Integer, IndexDocumentRecord> s2){
+        for(Map.Entry<Integer, IndexDocumentRecord> e : s1.entrySet()){
             if(s2.containsKey(e.getKey())){
                 e.getValue().sumTfIdf(s2.get(e.getKey()).getTfIdf());
             }

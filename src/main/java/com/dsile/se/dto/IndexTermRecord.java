@@ -1,5 +1,6 @@
 package com.dsile.se.dto;
 
+import java.util.Collections;
 import java.util.LinkedList;
 import java.util.List;
 
@@ -13,6 +14,7 @@ public class IndexTermRecord implements Comparable<IndexTermRecord>{
     public IndexTermRecord(List<Integer> docIdAndPositions) {
         this.docId = docIdAndPositions.get(0);
         this.positions = docIdAndPositions.subList(1,docIdAndPositions.size());
+        Collections.reverse(this.positions);
         this.positionsSize = this.positions.size();
     }
 

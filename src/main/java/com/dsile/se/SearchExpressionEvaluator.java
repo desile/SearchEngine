@@ -4,6 +4,8 @@ import java.io.IOException;
 import java.util.*;
 import java.util.function.*;
 import java.util.function.Function;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -17,6 +19,9 @@ import org.springframework.stereotype.Component;
 
 @Component
 public class SearchExpressionEvaluator extends AbstractEvaluator<Map<Integer, IndexTermRecord>> {
+
+    private static final Pattern quoteRegex = Pattern.compile("\"(.*)\"(\\/(\\d+))?");
+
     /** The negate unary operator.*/
     public final static Operator NEGATE = new Operator("!", 1, Operator.Associativity.RIGHT, 3);
     /** The logical AND operator.*/
@@ -50,15 +55,70 @@ public class SearchExpressionEvaluator extends AbstractEvaluator<Map<Integer, In
 
     @Override
     protected Map<Integer, IndexTermRecord> toValue(String literal, Object evaluationContext) {
-        List<String> normalForms;
-        try {
-            normalForms = rusmorph.getNormalForms(literal.toLowerCase());
-        } catch (WrongCharaterException wce){
-            normalForms = Collections.singletonList(literal);
+        Matcher quoteMatch = quoteRegex.matcher(literal);
+        if(quoteMatch.matches()){
+            int connectivity = 1;
+            if(quoteMatch.groupCount() == 3 && quoteMatch.group(3) != null){
+                connectivity = Integer.parseInt(quoteMatch.group(3)) + 1;
+            }
+
+            String[] quote = quoteMatch.group(1).split(" ");
+            List normalQuote = Arrays.stream(quote).map(q -> {
+                try {
+                    return rusmorph.getNormalForms(q.toLowerCase()).get(0);
+                } catch (WrongCharaterException wce){
+                    return q.toLowerCase();
+                }
+            }).collect(Collectors.toList());
+
+            return indexSearcher.findDocsWithQuote(normalQuote,connectivity);
+        } else {
+            List<String> normalForms;
+            try {
+                normalForms = rusmorph.getNormalForms(literal.toLowerCase());
+            } catch (WrongCharaterException wce){
+                normalForms = Collections.singletonList(literal);
+            }
+
+            return indexSearcher.findDocsWithWord(normalForms);
+        }
+    }
+
+    public Map<Integer, IndexTermRecord> parseAndEvaluate(String expression, Object evaluationContext){
+        StringBuilder formattedQuery = new StringBuilder();
+        expression = expression.trim();
+        boolean space = false;
+        boolean inQuotes = false;
+        for(Character c :expression.toCharArray()){
+            if(c.equals('\"')){
+                if(inQuotes){
+                    inQuotes = false;
+                } else {
+                    inQuotes = true;
+                }
+                formattedQuery.append(c);
+                continue;
+            }
+
+            if(c.equals(' ')){
+                if(inQuotes){
+                    formattedQuery.append(c);
+                    continue;
+                } else {
+                    if (!space){
+                        space = true;
+                        formattedQuery.append("&&");
+                    }
+                    continue;
+                }
+            } else {
+                space = false;
+            }
+
+            formattedQuery.append(c);
         }
 
-        return indexSearcher.findDocsWithWord(normalForms);
-
+        return evaluate(formattedQuery.toString(), evaluationContext);
     }
 
     @Override

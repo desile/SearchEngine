@@ -19,10 +19,16 @@ public class IndexSearcher {
 
     private boolean quoteRecursiveFinder(int wordNumber, int position, int connectivitiy, int wordCount, List<SortedMap<Integer, IndexDocumentRecord>> quoteDocs, int docId){
         List<Integer> positions = quoteDocs.get(wordNumber).get(docId).getPositions();
+        int gapSize = (int)(Math.sqrt(positions.size()));
 
         for (int i = 0; i < positions.size(); i++) {
             if(positions.get(i) < position){
-                continue;//следующая позиция должна быть больше предыдущей
+                if(i + gapSize < positions.size() && positions.get(i + gapSize) < position){
+                    i += gapSize;
+                    continue;
+                } else {
+                    continue;//следующая позиция должна быть больше предыдущей
+                }
             } else {
                 if(positions.get(i) <= (position + connectivitiy)){ //позиция должна быть больше, но при этом вписываться в окно
                     if(wordNumber == wordCount - 1){ //если это последнее слово в цитате то выходим
@@ -50,11 +56,12 @@ public class IndexSearcher {
             long bufferSize = in.getInt();
             System.out.println(bufferSize / Integer.BYTES);
             in = memoryMappedFile.getChannel().map(FileChannel.MapMode.READ_ONLY, place + Integer.BYTES, bufferSize);
-            List<Integer> positions = new LinkedList<>();
+            List<Integer> positions;
             while (in.hasRemaining()) {
                 int docId = in.getInt();
                 float tfIdf = in.getFloat();
                 int posSize = in.getInt();
+                positions = new ArrayList<>(posSize);
                 for (int j = 0; j < posSize; j++) {
                     positions.add(in.getInt());
                 }
@@ -65,7 +72,6 @@ public class IndexSearcher {
                 } else {
                     newWord.put(docId, new IndexDocumentRecord(docId, tfIdf, positions));
                 }
-                positions.clear();
             }
         }
     }

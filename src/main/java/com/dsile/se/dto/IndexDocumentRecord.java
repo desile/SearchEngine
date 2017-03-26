@@ -1,5 +1,6 @@
 package com.dsile.se.dto;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedList;
 import java.util.List;
@@ -14,7 +15,7 @@ public class IndexDocumentRecord implements Comparable<IndexDocumentRecord>{
     public IndexDocumentRecord(int docId, float tfIdf, List<Integer> positions){
         this.docId = docId;
         this.tfIdf = tfIdf;
-        this.positions = new LinkedList<>(positions);
+        this.positions = new ArrayList<>(positions);
         this.positionsSize = this.positions.size();
     }
 

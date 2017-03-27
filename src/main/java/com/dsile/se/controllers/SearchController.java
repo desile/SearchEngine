@@ -29,7 +29,7 @@ public class SearchController {
     String search(@RequestParam(name="query") String query ,
                   @RequestParam(name="type") String searchType ,
                   @RequestParam(name="page", defaultValue = "0") int page) {
-        int contentLength = 20;
+        int contentLength = 100;
 
         if(query == null || query.isEmpty()){
             return "{\"err\": \"empty query\"}";
@@ -41,6 +41,8 @@ public class SearchController {
             System.out.println("Не удалось выполнить загрузку словарей");
         }
 
+        long st = System.nanoTime();
+
         List<DocumentDto> findingDocs = see.parseAndEvaluate(query, searchType).entrySet().stream().map(docId -> new DocumentDto(docId.getKey(), is.getDocTitleById(docId.getKey()), docId.getValue().getTfIdf())).collect(Collectors.toList());
         int resultSize = findingDocs.size();
 
@@ -51,6 +53,10 @@ public class SearchController {
             case "boolean":
                 break;
         }
+
+        long en = System.nanoTime();
+
+        System.out.println("Complete in time: " + String.format("%,12d",(en-st)));
 
         if (findingDocs.size() > contentLength) {
             findingDocs = findingDocs.subList(page*contentLength, (page+1)*contentLength);

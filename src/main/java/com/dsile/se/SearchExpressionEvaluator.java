@@ -138,6 +138,9 @@ public class SearchExpressionEvaluator extends AbstractEvaluator<Map<Integer, In
 
     private Map<Integer, IndexDocumentRecord> intersection(Map<Integer, IndexDocumentRecord> s1, Map<Integer, IndexDocumentRecord> s2){
         Map<Integer, IndexDocumentRecord> union = new HashMap<>();
+        for(int i = 0; i < s1.size(); i++){
+
+        }
         for(Map.Entry<Integer, IndexDocumentRecord> e : s1.entrySet()){
             if(s2.containsKey(e.getKey())){
                 e.getValue().sumTfIdf(s2.get(e.getKey()).getTfIdf());

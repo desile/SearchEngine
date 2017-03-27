@@ -196,6 +196,8 @@ public class IndexingProcessor {
         List<IndexTermRecord> lines = new ArrayList<>();
         List<Integer> ids = new ArrayList<>();
 
+        int minimalGapListSize = 50;
+
         for (int i = 0; i < blocks.size(); i++) {
             brList.add(new DataInputStream(new BufferedInputStream(new FileInputStream(blocks.get(i)))));
             DataInputStream curIntput = brList.get(i);
@@ -227,7 +229,7 @@ public class IndexingProcessor {
 
             while (true) {
                 debugCycle++;
-                if(debugCycle % 100 == 0){
+                if(debugCycle % 1000 == 0){
                     System.out.println(debugCycle);
                 }
                 boolean allLinesNull = true;
@@ -254,26 +256,39 @@ public class IndexingProcessor {
 
 
                 //структура docId, tfIdf, list<positions>
-                TreeSet<IndexDocumentRecord> resultSet = new TreeSet<>();
+                List<IndexDocumentRecord> resultSet = new ArrayList<>();
                 for (int indexWithMinId : indexesWithMinId) {
                     resultSet.addAll(lines.get(indexWithMinId).getDocuments());
                 }
 
+                resultSet.sort(Collections.reverseOrder());
+
                 double IDF = Math.log(((double)1_300_000)/resultSet.size());
+                int gapSize = (int)(Math.sqrt(resultSet.size()));
 
                 int sumOfPositionSizes = resultSet.stream().mapToInt(IndexDocumentRecord::getPositionsSize).sum();
-                int bufferSize = (Integer.BYTES + resultSet.size() * (Integer.BYTES + Float.BYTES + Integer.BYTES) + Integer.BYTES * sumOfPositionSizes);
+                int bufferSize = (Integer.BYTES + Integer.BYTES + /*Integer.BYTES * (resultSet.size() / gapSize) +*/ resultSet.size() * (Integer.BYTES + Float.BYTES + Integer.BYTES) + Integer.BYTES * sumOfPositionSizes);
 
                 out.writeInt(bufferSize - Integer.BYTES);
+                out.writeInt(resultSet.size());
 
-                for(IndexDocumentRecord e : resultSet){
-                    out.writeInt(e.getDocId());
-                    out.writeFloat((float)(IDF * e.calculateIf()));
-                    out.writeInt(e.getPositionsSize());
-                    for(int i = e.getPositionsSize() - 1; i >= 0; i-- ){//обратный обход для восстановления порядка возрастания позиций
-                        out.writeInt(e.getPositions().get(i));
+
+                for(int k = 0; k < resultSet.size(); k++){
+                    if(k % gapSize == 0 && k + gapSize < resultSet.size()){
+                        int gapBytes = 0;
+                        for(int m = k; m < k + gapSize; m++){
+                            gapBytes += Integer.BYTES + Float.BYTES + Integer.BYTES + resultSet.get(m).getPositionsSize() * Integer.BYTES;
+                        }
+                        //out.writeInt(gapBytes);
+                    }
+                    out.writeInt(resultSet.get(k).getDocId());
+                    out.writeFloat((float)(IDF * resultSet.get(k).calculateIf()));
+                    out.writeInt(resultSet.get(k).getPositionsSize());
+                    for(int i = resultSet.get(k).getPositionsSize() - 1; i >= 0; i-- ){//обратный обход для восстановления порядка возрастания позиций
+                        out.writeInt(resultSet.get(k).getPositions().get(i));
                     }
                 }
+
 
                 termIndexLinks.put(minId, currentByte);
 

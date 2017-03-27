@@ -17,7 +17,7 @@ public class IndexSearcher {
     private HashMap<Integer, String> docsTitleMap = new HashMap<>();
 
 
-    private boolean quoteRecursiveFinder(int wordNumber, int position, int connectivitiy, int wordCount, List<SortedMap<Integer, IndexDocumentRecord>> quoteDocs, int docId){
+    private boolean quoteRecursiveFinder(int wordNumber, int position, int connectivitiy, int wordCount, List<Map<Integer, IndexDocumentRecord>> quoteDocs, int docId){
         List<Integer> positions = quoteDocs.get(wordNumber).get(docId).getPositions();
         int gapSize = (int)(Math.sqrt(positions.size()));
 
@@ -43,7 +43,76 @@ public class IndexSearcher {
         return false;
     }
 
-    private void collectRecordsFromIndexBlockByWord(String word, SortedMap<Integer, IndexDocumentRecord> newWord) throws IOException {
+    private List<Map<Integer, IndexDocumentRecord>> collectRecordsWithFastIntersectiont(List<String> words) throws IOException {
+        List<Map<Integer, IndexDocumentRecord>> quoteDocs = new LinkedList<>();
+        for(String word : words){
+            quoteDocs.add(new HashMap<>());
+        }
+
+        List<MappedByteBuffer> buffers = new LinkedList<>();
+        List<Integer> docsSize = new LinkedList<>();
+        List<Integer> currentDoc = new LinkedList<>();
+        List<Integer> currentBytes = new LinkedList<>();
+
+        for(String word : words){
+            RandomAccessFile memoryMappedFile = new RandomAccessFile(Constants.RESULT_INDEX_PATH, "r");
+            long place = termIndexLinks.get(termDictionary.get(word));
+            MappedByteBuffer in = memoryMappedFile.getChannel().map(FileChannel.MapMode.READ_ONLY, place, Integer.BYTES);
+            long bufferSize = in.getInt();
+            in = memoryMappedFile.getChannel().map(FileChannel.MapMode.READ_ONLY, place + Integer.BYTES, bufferSize);
+            buffers.add(in);
+            docsSize.add(in.getInt());
+            currentDoc.add(in.getInt());
+            currentBytes.add(Integer.BYTES * 2);
+        }
+
+        intersectionCycle:
+        while(true){
+
+            int minId = currentDoc.stream().min(Integer::compareTo).get();
+
+            List<Integer> indexesWithMinId = new LinkedList<>();
+            for (int i = 0; i < currentDoc.size(); i++) {
+                if (currentDoc.get(i) == minId) {
+                    indexesWithMinId.add(i);
+                }
+            }
+            if (indexesWithMinId.size() == words.size()){
+                for(int i = 0; i < buffers.size(); i++){
+                    float tfIdf = buffers.get(i).getFloat();
+                    int posSize = buffers.get(i).getInt();
+                    List<Integer> positions = new ArrayList<>(posSize);
+                    for (int j = 0; j < posSize; j++) {
+                        positions.add(buffers.get(i).getInt());
+                    }
+                    IndexDocumentRecord idr = new IndexDocumentRecord(currentDoc.get(i),tfIdf,positions);
+                    quoteDocs.get(i).put(currentDoc.get(i),idr);
+                    if(!buffers.get(i).hasRemaining()){
+                        break intersectionCycle;
+                    }
+                    currentDoc.set(i,buffers.get(i).getInt());
+                    currentBytes.set(i, currentBytes.get(i) + Float.BYTES + Integer.BYTES + Integer.BYTES * posSize + Integer.BYTES);
+                }
+            } else {
+                for(int minIndex : indexesWithMinId){
+                    buffers.get(minIndex).getFloat();
+                    int posSize = buffers.get(minIndex).getInt();
+                    for(int j = 0; j < posSize; j++){
+                        buffers.get(minIndex).getInt();
+                    }
+                    if(!buffers.get(minIndex).hasRemaining()){
+                        break intersectionCycle;
+                    }
+                    currentDoc.set(minIndex,buffers.get(minIndex).getInt());
+                    currentBytes.set(minIndex, currentBytes.get(minIndex) + Float.BYTES + Integer.BYTES + Integer.BYTES * posSize + Integer.BYTES);
+                }
+            }
+
+        }
+        return quoteDocs;
+    }
+
+    private void collectRecordsFromIndexBlockByWord(String word, Map<Integer, IndexDocumentRecord> newWord, boolean needPositions) throws IOException {
         try (RandomAccessFile memoryMappedFile = new RandomAccessFile(Constants.RESULT_INDEX_PATH, "r")) {
 
             System.out.println("index: " + termDictionary.get(word));
@@ -54,16 +123,22 @@ public class IndexSearcher {
             long place = termIndexLinks.get(termDictionary.get(word));
             MappedByteBuffer in = memoryMappedFile.getChannel().map(FileChannel.MapMode.READ_ONLY, place, Integer.BYTES);
             long bufferSize = in.getInt();
-            System.out.println(bufferSize / Integer.BYTES);
             in = memoryMappedFile.getChannel().map(FileChannel.MapMode.READ_ONLY, place + Integer.BYTES, bufferSize);
-            List<Integer> positions;
+            List<Integer> positions = Collections.emptyList();
+            in.getInt();//пропускаем кол-во докуентов
             while (in.hasRemaining()) {
                 int docId = in.getInt();
                 float tfIdf = in.getFloat();
                 int posSize = in.getInt();
-                positions = new ArrayList<>(posSize);
-                for (int j = 0; j < posSize; j++) {
-                    positions.add(in.getInt());
+                if(needPositions) {
+                    positions = new ArrayList<>(posSize);
+                    for (int j = 0; j < posSize; j++) {
+                        positions.add(in.getInt());
+                    }
+                } else {
+                    for(int j = 0; j < posSize; j++) {
+                        in.getInt();
+                    }
                 }
 
                 IndexDocumentRecord curRecord = newWord.get(docId);
@@ -73,44 +148,34 @@ public class IndexSearcher {
                     newWord.put(docId, new IndexDocumentRecord(docId, tfIdf, positions));
                 }
             }
+
+            System.out.println("index: " + termDictionary.get(word) + " complete");
         }
     }
 
-    private SortedMap<Integer, IndexDocumentRecord> collectRecordsFromIndexBlockByWord(String word) throws IOException {
-        SortedMap<Integer, IndexDocumentRecord> newWord = new TreeMap<>();
-        collectRecordsFromIndexBlockByWord(word, newWord);
+    private Map<Integer, IndexDocumentRecord> collectRecordsFromIndexBlockByWord(String word) throws IOException {
+        Map<Integer, IndexDocumentRecord> newWord = new HashMap<>();
+        collectRecordsFromIndexBlockByWord(word, newWord, true);
         return newWord;
     }
 
 
-    public SortedMap<Integer,IndexDocumentRecord> findDocsWithQuote(List<String> words, int connectivity) {
-        List<SortedMap<Integer, IndexDocumentRecord>> quoteDocs = new LinkedList<>();
+    public Map<Integer,IndexDocumentRecord> findDocsWithQuote(List<String> words, int connectivity) {
+        List<Map<Integer, IndexDocumentRecord>> quoteDocs = new LinkedList<>();
 
         try {
-            for (String word : words) {
-                quoteDocs.add(collectRecordsFromIndexBlockByWord(word));
-            }
+            quoteDocs = collectRecordsWithFastIntersectiont(words);
         } catch (IOException e) {
             System.out.println(e);//TODO: Logging
         }
 
-        //find intersections of all words in quotes
-        Set<Integer> commonDocs = new TreeSet<>(quoteDocs.get(0).keySet());
         if(quoteDocs.size() < 2){
             return quoteDocs.get(0);
-        } else {
-            for(int i = 1; i < quoteDocs.size(); i++){
-                commonDocs.retainAll(quoteDocs.get(i).keySet());
-            }
-
-            for(int i = 0; i < quoteDocs.size(); i++){
-                quoteDocs.get(i).keySet().retainAll(commonDocs);
-            }
         }
 
         //check words with connectivity
         docCycle:
-        for(int docId : commonDocs){
+        for(int docId : quoteDocs.get(1).keySet()){
             for(int i = 0; i < quoteDocs.get(0).get(docId).getPositions().size(); i++) {
                 if (quoteRecursiveFinder(1, quoteDocs.get(0).get(docId).getPositions().get(i), connectivity, quoteDocs.size(), quoteDocs, docId)) {
                     quoteDocs.get(0).get(docId).resetTfIdf();
@@ -123,13 +188,13 @@ public class IndexSearcher {
         return quoteDocs.get(0);
     }
 
-    public SortedMap<Integer,IndexDocumentRecord> findDocsWithWord(List<String> normalForms) {
+    public Map<Integer,IndexDocumentRecord> findDocsWithWord(List<String> normalForms) {
 
-        SortedMap<Integer, IndexDocumentRecord> resultDocs = new TreeMap<>();
+        Map<Integer, IndexDocumentRecord> resultDocs = new HashMap<>();
 
         try {
             for (String word : normalForms) {
-                collectRecordsFromIndexBlockByWord(word,resultDocs);
+                collectRecordsFromIndexBlockByWord(word,resultDocs,false);
             }
         } catch (IOException e) {
             System.out.println(e);//TODO: Logging

@@ -267,28 +267,34 @@ public class IndexingProcessor {
                 int gapSize = (int)(Math.sqrt(resultSet.size()));
 
                 int sumOfPositionSizes = resultSet.stream().mapToInt(IndexDocumentRecord::getPositionsSize).sum();
-                int bufferSize = (Integer.BYTES + Integer.BYTES + /*Integer.BYTES * (resultSet.size() / gapSize) +*/ resultSet.size() * (Integer.BYTES + Float.BYTES + Integer.BYTES) + Integer.BYTES * sumOfPositionSizes);
+                int gapsBytes = minimalGapListSize > resultSet.size() ? 0 : Integer.BYTES * ((resultSet.size() - 1) / gapSize);
+
+                int bufferSize = (Integer.BYTES + Integer.BYTES + gapsBytes + resultSet.size() * (Integer.BYTES + Float.BYTES + Integer.BYTES) + Integer.BYTES * sumOfPositionSizes);
 
                 out.writeInt(bufferSize - Integer.BYTES);
                 out.writeInt(resultSet.size());
 
+                int countGaps = 0;
 
                 for(int k = 0; k < resultSet.size(); k++){
-                    if(k % gapSize == 0 && k + gapSize < resultSet.size()){
+                    out.writeInt(resultSet.get(k).getDocId());
+                    if(minimalGapListSize <= resultSet.size() && k % gapSize == 0 && k + gapSize < resultSet.size()){
                         int gapBytes = 0;
                         for(int m = k; m < k + gapSize; m++){
-                            gapBytes += Integer.BYTES + Float.BYTES + Integer.BYTES + resultSet.get(m).getPositionsSize() * Integer.BYTES;
+                            gapBytes += Float.BYTES + Integer.BYTES + resultSet.get(m).getPositionsSize() * Integer.BYTES;
                         }
-                        //out.writeInt(gapBytes);
+                        countGaps++;
+                        out.writeInt(gapBytes);
                     }
-                    out.writeInt(resultSet.get(k).getDocId());
                     out.writeFloat((float)(IDF * resultSet.get(k).calculateIf()));
                     out.writeInt(resultSet.get(k).getPositionsSize());
                     for(int i = resultSet.get(k).getPositionsSize() - 1; i >= 0; i-- ){//обратный обход для восстановления порядка возрастания позиций
                         out.writeInt(resultSet.get(k).getPositions().get(i));
                     }
                 }
-
+                if(countGaps != gapsBytes / Integer.BYTES){
+                    System.out.println("Alarm: " + countGaps + " != " + gapsBytes/Integer.BYTES);
+                }
 
                 termIndexLinks.put(minId, currentByte);
 
@@ -322,8 +328,8 @@ public class IndexingProcessor {
 
     public static void main(String[] args) throws IOException, ClassNotFoundException {
         IndexingProcessor processor = new IndexingProcessor();
-        processor.clearBlocksAndIndexes();
-        processor.process();
+        //processor.clearBlocksAndIndexes();
+        //processor.process();
         processor.mergeFiles();
     }
 

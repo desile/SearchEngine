@@ -15,6 +15,7 @@ public class IndexSearcher {
     private HashMap<String, Integer> termDictionary = new HashMap<>();
     private HashMap<Integer, Long> termIndexLinks = new HashMap<>();
     private HashMap<Integer, String> docsTitleMap = new HashMap<>();
+    int minimalGapListSize = 50;
 
 
     private boolean quoteRecursiveFinder(int wordNumber, int position, int connectivitiy, int wordCount, List<Map<Integer, IndexDocumentRecord>> quoteDocs, int docId){
@@ -51,8 +52,10 @@ public class IndexSearcher {
 
         List<MappedByteBuffer> buffers = new LinkedList<>();
         List<Integer> docsSize = new LinkedList<>();
+        List<Integer> gapsSize = new LinkedList<>();
         List<Integer> currentDoc = new LinkedList<>();
         List<Integer> currentBytes = new LinkedList<>();
+        List<Integer> iter = new LinkedList<>();
 
         for(String word : words){
             RandomAccessFile memoryMappedFile = new RandomAccessFile(Constants.RESULT_INDEX_PATH, "r");
@@ -61,15 +64,21 @@ public class IndexSearcher {
             long bufferSize = in.getInt();
             in = memoryMappedFile.getChannel().map(FileChannel.MapMode.READ_ONLY, place + Integer.BYTES, bufferSize);
             buffers.add(in);
+            iter.add(0);
             docsSize.add(in.getInt());
             currentDoc.add(in.getInt());
             currentBytes.add(Integer.BYTES * 2);
+        }
+
+        for(int i = 0; i < docsSize.size(); i++){
+            gapsSize.add((int)(Math.sqrt(docsSize.get(i))));
         }
 
         intersectionCycle:
         while(true){
 
             int minId = currentDoc.stream().min(Integer::compareTo).get();
+            int maxId = currentDoc.stream().max(Integer::compareTo).get();
 
             List<Integer> indexesWithMinId = new LinkedList<>();
             for (int i = 0; i < currentDoc.size(); i++) {
@@ -77,6 +86,14 @@ public class IndexSearcher {
                     indexesWithMinId.add(i);
                 }
             }
+
+            for(int i : indexesWithMinId){
+                if(minimalGapListSize <= docsSize.get(i) && iter.get(i) % gapsSize.get(i) == 0 && iter.get(i) + gapsSize.get(i) < docsSize.get(i)){
+                    int gapBytes = buffers.get(i).getInt();
+                    currentBytes.set(i,currentBytes.get(i) + Integer.BYTES);
+                }
+            }
+
             if (indexesWithMinId.size() == words.size()){
                 for(int i = 0; i < buffers.size(); i++){
                     float tfIdf = buffers.get(i).getFloat();
@@ -90,11 +107,16 @@ public class IndexSearcher {
                     if(!buffers.get(i).hasRemaining()){
                         break intersectionCycle;
                     }
+                    int currentByte = currentBytes.get(i) + Float.BYTES + Integer.BYTES + Integer.BYTES * posSize;
+
+                    iter.set(i,iter.get(i) + 1);
                     currentDoc.set(i,buffers.get(i).getInt());
-                    currentBytes.set(i, currentBytes.get(i) + Float.BYTES + Integer.BYTES + Integer.BYTES * posSize + Integer.BYTES);
+                    currentBytes.set(i, currentByte + Integer.BYTES);
+
                 }
             } else {
                 for(int minIndex : indexesWithMinId){
+
                     buffers.get(minIndex).getFloat();
                     int posSize = buffers.get(minIndex).getInt();
                     for(int j = 0; j < posSize; j++){
@@ -103,8 +125,12 @@ public class IndexSearcher {
                     if(!buffers.get(minIndex).hasRemaining()){
                         break intersectionCycle;
                     }
+
+                    iter.set(minIndex,iter.get(minIndex) + 1);
+
+                    int currentByte = currentBytes.get(minIndex) + Float.BYTES + Integer.BYTES + Integer.BYTES * posSize;
                     currentDoc.set(minIndex,buffers.get(minIndex).getInt());
-                    currentBytes.set(minIndex, currentBytes.get(minIndex) + Float.BYTES + Integer.BYTES + Integer.BYTES * posSize + Integer.BYTES);
+                    currentBytes.set(minIndex, currentByte + Integer.BYTES);
                 }
             }
 
@@ -125,9 +151,15 @@ public class IndexSearcher {
             long bufferSize = in.getInt();
             in = memoryMappedFile.getChannel().map(FileChannel.MapMode.READ_ONLY, place + Integer.BYTES, bufferSize);
             List<Integer> positions = Collections.emptyList();
-            in.getInt();//пропускаем кол-во докуентов
+            int docsSetSize = in.getInt();
+            int gapsSize = (int)(Math.sqrt(docsSetSize));
+            int iter = 0;
             while (in.hasRemaining()) {
                 int docId = in.getInt();
+                //такое условие из-за того, что прыжки установлены в строго определенных местах
+                if(minimalGapListSize <= docsSetSize && iter % gapsSize == 0 && iter + gapsSize < docsSetSize){
+                    in.getInt();//прыжки тут не нужны, поэтому пропускаем
+                }
                 float tfIdf = in.getFloat();
                 int posSize = in.getInt();
                 if(needPositions) {
@@ -147,6 +179,8 @@ public class IndexSearcher {
                 } else {
                     newWord.put(docId, new IndexDocumentRecord(docId, tfIdf, positions));
                 }
+
+                iter++;
             }
 
             System.out.println("index: " + termDictionary.get(word) + " complete");

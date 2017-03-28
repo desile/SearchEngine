@@ -281,10 +281,10 @@ public class IndexingProcessor {
                     if(minimalGapListSize <= resultSet.size() && k % gapSize == 0 && k + gapSize < resultSet.size()){
                         int gapBytes = 0;
                         for(int m = k; m < k + gapSize; m++){
-                            gapBytes += Float.BYTES + Integer.BYTES + resultSet.get(m).getPositionsSize() * Integer.BYTES;
+                            gapBytes += Float.BYTES + Integer.BYTES + resultSet.get(m).getPositionsSize() * Integer.BYTES + Integer.BYTES;
                         }
                         countGaps++;
-                        out.writeInt(gapBytes);
+                        out.writeInt(gapBytes - Integer.BYTES);//исключаем последний docid - так как перепрыгнуть нам нужно к нему
                     }
                     out.writeFloat((float)(IDF * resultSet.get(k).calculateIf()));
                     out.writeInt(resultSet.get(k).getPositionsSize());

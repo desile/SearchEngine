@@ -54,7 +54,6 @@ public class IndexSearcher {
         List<Integer> docsSize = new LinkedList<>();
         List<Integer> gapsSize = new LinkedList<>();
         List<Integer> currentDoc = new LinkedList<>();
-        List<Integer> currentBytes = new LinkedList<>();
         List<Integer> iter = new LinkedList<>();
 
         for(String word : words){
@@ -67,7 +66,6 @@ public class IndexSearcher {
             iter.add(0);
             docsSize.add(in.getInt());
             currentDoc.add(in.getInt());
-            currentBytes.add(Integer.BYTES * 2);
         }
 
         for(int i = 0; i < docsSize.size(); i++){
@@ -90,7 +88,13 @@ public class IndexSearcher {
             for(int i : indexesWithMinId){
                 if(minimalGapListSize <= docsSize.get(i) && iter.get(i) % gapsSize.get(i) == 0 && iter.get(i) + gapsSize.get(i) < docsSize.get(i)){
                     int gapBytes = buffers.get(i).getInt();
-                    currentBytes.set(i,currentBytes.get(i) + Integer.BYTES);
+                    int docIdOnGap = buffers.get(i).getInt(buffers.get(i).position() + gapBytes);
+                    if(docIdOnGap < maxId){
+                        currentDoc.set(i,docIdOnGap);
+                        buffers.get(i).position(buffers.get(i).position() + gapBytes + Integer.BYTES);
+                        iter.set(i,iter.get(i) + gapsSize.get(i));// -1 ?
+                        continue intersectionCycle;
+                    }
                 }
             }
 
@@ -107,16 +111,13 @@ public class IndexSearcher {
                     if(!buffers.get(i).hasRemaining()){
                         break intersectionCycle;
                     }
-                    int currentByte = currentBytes.get(i) + Float.BYTES + Integer.BYTES + Integer.BYTES * posSize;
 
                     iter.set(i,iter.get(i) + 1);
                     currentDoc.set(i,buffers.get(i).getInt());
-                    currentBytes.set(i, currentByte + Integer.BYTES);
 
                 }
             } else {
                 for(int minIndex : indexesWithMinId){
-
                     buffers.get(minIndex).getFloat();
                     int posSize = buffers.get(minIndex).getInt();
                     for(int j = 0; j < posSize; j++){
@@ -125,12 +126,9 @@ public class IndexSearcher {
                     if(!buffers.get(minIndex).hasRemaining()){
                         break intersectionCycle;
                     }
-
                     iter.set(minIndex,iter.get(minIndex) + 1);
 
-                    int currentByte = currentBytes.get(minIndex) + Float.BYTES + Integer.BYTES + Integer.BYTES * posSize;
                     currentDoc.set(minIndex,buffers.get(minIndex).getInt());
-                    currentBytes.set(minIndex, currentByte + Integer.BYTES);
                 }
             }
 

@@ -120,9 +120,8 @@ public class IndexSearcher {
                 for(int minIndex : indexesWithMinId){
                     buffers.get(minIndex).getFloat();
                     int posSize = buffers.get(minIndex).getInt();
-                    for(int j = 0; j < posSize; j++){
-                        buffers.get(minIndex).getInt();
-                    }
+                    buffers.get(minIndex).position(buffers.get(minIndex).position() + posSize * Integer.BYTES);
+
                     if(!buffers.get(minIndex).hasRemaining()){
                         break intersectionCycle;
                     }
@@ -136,7 +135,7 @@ public class IndexSearcher {
         return quoteDocs;
     }
 
-    private void collectRecordsFromIndexBlockByWord(String word, Map<Integer, IndexDocumentRecord> newWord, boolean needPositions) throws IOException {
+    private void collectRecordsFromIndexBlockByWord(String word, Map<Integer, IndexDocumentRecord> newWord) throws IOException {
         try (RandomAccessFile memoryMappedFile = new RandomAccessFile(Constants.RESULT_INDEX_PATH, "r")) {
 
             System.out.println("index: " + termDictionary.get(word));
@@ -160,16 +159,7 @@ public class IndexSearcher {
                 }
                 float tfIdf = in.getFloat();
                 int posSize = in.getInt();
-                if(needPositions) {
-                    positions = new ArrayList<>(posSize);
-                    for (int j = 0; j < posSize; j++) {
-                        positions.add(in.getInt());
-                    }
-                } else {
-                    for(int j = 0; j < posSize; j++) {
-                        in.getInt();
-                    }
-                }
+                in.position(in.position() + posSize * Integer.BYTES);
 
                 IndexDocumentRecord curRecord = newWord.get(docId);
                 if (curRecord != null) {
@@ -183,12 +173,6 @@ public class IndexSearcher {
 
             System.out.println("index: " + termDictionary.get(word) + " complete");
         }
-    }
-
-    private Map<Integer, IndexDocumentRecord> collectRecordsFromIndexBlockByWord(String word) throws IOException {
-        Map<Integer, IndexDocumentRecord> newWord = new HashMap<>();
-        collectRecordsFromIndexBlockByWord(word, newWord, true);
-        return newWord;
     }
 
 
@@ -226,7 +210,7 @@ public class IndexSearcher {
 
         try {
             for (String word : normalForms) {
-                collectRecordsFromIndexBlockByWord(word,resultDocs,false);
+                collectRecordsFromIndexBlockByWord(word,resultDocs);
             }
         } catch (IOException e) {
             System.out.println(e);//TODO: Logging

@@ -12,11 +12,20 @@ public class QueryResultDto {
     private List<DocumentDto> documents;
     private int resultSize;
     private int page;
+    private long timeQueryProcessing = 0;
 
     public QueryResultDto(List<DocumentDto> documents, int resultSize, int page) {
         this.documents = documents;
         this.resultSize = resultSize;
         this.page = page;
+    }
+
+    public long getTimeQueryProcessing() {
+        return timeQueryProcessing;
+    }
+
+    public void setTimeQueryProcessing(long timeQueryProcessing) {
+        this.timeQueryProcessing = timeQueryProcessing;
     }
 
     public List<DocumentDto> getDocuments() {

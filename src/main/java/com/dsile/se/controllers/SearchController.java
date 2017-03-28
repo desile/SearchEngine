@@ -56,13 +56,16 @@ public class SearchController {
 
         long en = System.nanoTime();
 
-        System.out.println("Complete in time: " + String.format("%,12d",(en-st)));
+        long queryTime = en - st;
+
+        System.out.println("Complete in time: " + String.format("%,12d",(queryTime)));
 
         if (findingDocs.size() > contentLength) {
             findingDocs = findingDocs.subList(page*contentLength, (page+1)*contentLength);
         }
 
         QueryResultDto result = new QueryResultDto(findingDocs,resultSize,page);
+        result.setTimeQueryProcessing(queryTime);
 
         return new Gson().toJson(result);
     }

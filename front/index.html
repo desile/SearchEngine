@@ -12,6 +12,10 @@
         margin-bottom: 15px;
       }
 
+      .searchResult{
+        clear: both;
+      }
+
       .searchResult:hover{
          background-color:  #e6f2ff;
       }
@@ -20,7 +24,7 @@
   <body>
     <div id="app">
       <div class="jumbotron">
-        <div class="container">
+        <div class="container" style="margin-bottom: 10px">
           <center><h1>{{ msg }}</h1></center>
           <div class="input-group">
             <div class="input-group-addon">&gt;</div>
@@ -35,23 +39,31 @@
           </span>
           </div>
         </div>
+        <div class="container">
+        <div>
+            <div style="margin-right: 0; display: inline-block" v-if="queryTime > 0">Найдено результатов: {{resultSize}}.</div>
+            <div style="float: right; display: inline-block" v-if="queryTime > 0">Поиск выполнен за {{queryTime}} секунд.</div>
+        </div>
+        </div>
       </div>
 
       <div class="container">
-        <ol>
-            <li style="height:26px;line-height:18px;" v-for="(res, index) in searchResult">
-              <div class="row searchResult" style="margin: auto;">
-              <div class="col-9">
-                <a :href="'https://ru.wikipedia.org/?curid=' + res.id">{{ res.title }}</a>
-              </div>
-              <div v-if="showCoef" class="col-3">
-                {{ res.tfIdf }}
-              </div>
-              </div>
-            </li>
-        </ol>
+        <div style="margin-bottom: 5px;" v-for="(res, index) in searchResult">
+          <div class="row searchResult" style="margin: auto;">
+            <div class="col-1" style="flex: 0 0 0%; max-width: 0%; margin-right: 15px;">
+              {{ index + 1 }}.
+            </div>
+            <div class="col-9">
+              <a :href="'https://ru.wikipedia.org/?curid=' + res.id">{{ res.title }}</a>
+            </div>
+            <div v-if="showCoef" class="col-2">
+              {{ res.tfIdf }}
+            </div>
+          </div>
+        </div>
 
       </div>
+
     </div>
     <script src="/dist/build.js"></script>
   </body>

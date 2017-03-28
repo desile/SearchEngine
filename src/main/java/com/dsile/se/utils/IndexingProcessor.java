@@ -175,13 +175,18 @@ public class IndexingProcessor {
                 map(entry -> entry.getKey() + " " + entry.getValue().toString()).
                 collect(Collectors.joining("\n")), "UTF-8");
 
-        //TODO: Serializing fucking slow - better make standard byte writing
-        try(ObjectOutputStream termToFileWriter = new ObjectOutputStream(new FileOutputStream(new File(Constants.TERM_DICTIONARY_PATH)))){
-            termToFileWriter.writeObject(termDictionary);
+        try(DataOutputStream out = new DataOutputStream(new BufferedOutputStream(new FileOutputStream(new File(Constants.TERM_DICTIONARY_PATH))))) {
+            for(Map.Entry<String,Integer> e : termDictionary.entrySet()){
+                out.writeUTF(e.getKey());
+                out.writeInt(e.getValue());
+            }
         }
 
-        try(ObjectOutputStream titlesToFileWriter = new ObjectOutputStream(new FileOutputStream(new File(Constants.DOCS_TITLES_PATH)))){
-            titlesToFileWriter.writeObject(docsTitleMap);
+        try(DataOutputStream out = new DataOutputStream(new BufferedOutputStream(new FileOutputStream(new File(Constants.DOCS_TITLES_PATH))))) {
+            for(Map.Entry<Integer,String> e : docsTitleMap.entrySet()){
+                out.writeInt(e.getKey());
+                out.writeUTF(e.getValue());
+            }
         }
 
         indexTmpMap.clear();
@@ -222,7 +227,7 @@ public class IndexingProcessor {
         }
 
         try(DataOutputStream out = new DataOutputStream(new BufferedOutputStream(new FileOutputStream(new File(Constants.RESULT_INDEX_PATH))));
-            ObjectOutputStream indexLinksOutput = new ObjectOutputStream(new FileOutputStream(new File(Constants.INDEX_LINKS_PATH)))) {
+            DataOutputStream linksOut = new DataOutputStream(new BufferedOutputStream(new FileOutputStream(new File(Constants.INDEX_LINKS_PATH))))) {
 
             long currentByte = 0;
             int debugCycle = 0;
@@ -321,15 +326,18 @@ public class IndexingProcessor {
                 }
             }
 
-            indexLinksOutput.writeObject(termIndexLinks);
+            for(Map.Entry<Integer,Long> e : termIndexLinks.entrySet()){
+                linksOut.writeInt(e.getKey());
+                linksOut.writeLong(e.getValue());
+            }
         }
     }
 
 
     public static void main(String[] args) throws IOException, ClassNotFoundException {
         IndexingProcessor processor = new IndexingProcessor();
-        //processor.clearBlocksAndIndexes();
-        //processor.process();
+        processor.clearBlocksAndIndexes();
+        processor.process();
         processor.mergeFiles();
     }
 

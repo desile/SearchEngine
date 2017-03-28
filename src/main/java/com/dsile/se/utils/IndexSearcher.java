@@ -238,17 +238,23 @@ public class IndexSearcher {
 
     public void lazyLoading() throws IOException, ClassNotFoundException {
         if (termDictionary.isEmpty() || termIndexLinks.isEmpty() || docsTitleMap.isEmpty()) {
-            try (ObjectInputStream termReader = new ObjectInputStream(new FileInputStream(Constants.TERM_DICTIONARY_PATH));
-                 ObjectInputStream titleReader = new ObjectInputStream(new FileInputStream(Constants.DOCS_TITLES_PATH));
-                 ObjectInputStream linkReader = new ObjectInputStream(new FileInputStream(Constants.INDEX_LINKS_PATH))) {
+            try (DataInputStream termReader = new DataInputStream(new BufferedInputStream(new FileInputStream(Constants.TERM_DICTIONARY_PATH)));
+                DataInputStream titleReader = new DataInputStream(new BufferedInputStream(new FileInputStream(Constants.DOCS_TITLES_PATH)));
+                DataInputStream linkReader = new DataInputStream(new BufferedInputStream(new FileInputStream(Constants.INDEX_LINKS_PATH)))) {
                 System.out.println("start loading");
-                termDictionary = (HashMap<String, Integer>) termReader.readObject();
+                while(termReader.available() > 0){
+                    termDictionary.put(termReader.readUTF(),termReader.readInt());
+                }
                 System.out.println(termDictionary.size());
                 System.out.println("terms loaded");
-                termIndexLinks = (HashMap<Integer, Long>) linkReader.readObject();
-                System.out.println("links loaded");
-                docsTitleMap = (HashMap<Integer, String>) titleReader.readObject();
+                while(titleReader.available() > 0){
+                    docsTitleMap.put(titleReader.readInt(),titleReader.readUTF());
+                }
                 System.out.println("titles loaded");
+                while(linkReader.available() > 0){
+                    termIndexLinks.put(linkReader.readInt(),linkReader.readLong());
+                }
+                System.out.println("links loaded");
             }
         }
     }

@@ -102,9 +102,13 @@ public class IndexSearcher {
                 for(int i = 0; i < buffers.size(); i++){
                     float tfIdf = buffers.get(i).getFloat();
                     int posSize = buffers.get(i).getInt();
+                    int prevPosId = 0;
+                    int deltaPosId = 0;
                     List<Integer> positions = new ArrayList<>(posSize);
                     for (int j = 0; j < posSize; j++) {
-                        positions.add(buffers.get(i).getInt());
+                        deltaPosId = buffers.get(i).getInt();
+                        positions.add(deltaPosId + prevPosId);
+                        prevPosId = positions.get(j);
                     }
                     IndexDocumentRecord idr = new IndexDocumentRecord(currentDoc.get(i),tfIdf,positions);
                     quoteDocs.get(i).put(currentDoc.get(i),idr);
@@ -113,8 +117,12 @@ public class IndexSearcher {
                     }
 
                     iter.set(i,iter.get(i) + 1);
-                    currentDoc.set(i,buffers.get(i).getInt());
 
+                    if(minimalGapListSize <= docsSize.get(i) && iter.get(i) % gapsSize.get(i) == 0) {
+                        currentDoc.set(i, buffers.get(i).getInt());
+                    } else {
+                        currentDoc.set(i, currentDoc.get(i) + buffers.get(i).getInt());
+                    }
                 }
             } else {
                 for(int minIndex : indexesWithMinId){
@@ -127,7 +135,11 @@ public class IndexSearcher {
                     }
                     iter.set(minIndex,iter.get(minIndex) + 1);
 
-                    currentDoc.set(minIndex,buffers.get(minIndex).getInt());
+                    if(minimalGapListSize <= docsSize.get(minIndex) && iter.get(minIndex) % gapsSize.get(minIndex) == 0){
+                        currentDoc.set(minIndex,buffers.get(minIndex).getInt());
+                    } else {
+                        currentDoc.set(minIndex, currentDoc.get(minIndex) + buffers.get(minIndex).getInt());
+                    }
                 }
             }
 
@@ -151,12 +163,18 @@ public class IndexSearcher {
             int docsSetSize = in.getInt();
             int gapsSize = (int)(Math.sqrt(docsSetSize));
             int iter = 0;
+            int docId = 0;
             while (in.hasRemaining()) {
-                int docId = in.getInt();
                 //такое условие из-за того, что прыжки установлены в строго определенных местах
-                if(minimalGapListSize <= docsSetSize && iter % gapsSize == 0 && iter + gapsSize < docsSetSize){
-                    in.getInt();//прыжки тут не нужны, поэтому пропускаем
+                if(minimalGapListSize <= docsSetSize && iter % gapsSize == 0){
+                    docId = in.getInt();
+                    if(iter + gapsSize < docsSetSize) {
+                        in.getInt();//прыжки тут не нужны, поэтому пропускаем
+                    }
+                } else {
+                    docId = in.getInt() + docId;
                 }
+
                 float tfIdf = in.getFloat();
                 int posSize = in.getInt();
                 in.position(in.position() + posSize * Integer.BYTES);

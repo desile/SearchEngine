@@ -19,7 +19,7 @@ import java.util.stream.Collectors;
 public class IndexingProcessor {
 
     private static String dumpPath = Constants.WIKIDUMP_RAW_DIR + "out/";
-    private static String blockDir = Constants.WIKIDUMP_RAW_DIR + "blockTempDir/";
+    private static String blockDir = Constants.WIKIDUMP_RAW_DIR + "blockTempDir2/";
     private static String blockName = "block";
 
     private RussianLuceneMorphology rusmorph;
@@ -281,20 +281,40 @@ public class IndexingProcessor {
 
                 int countGaps = 0;
 
+                //for VB compression
+                int previousDocId = 0;
+                int previousPosition = 0;
+                int deltaDocId = 0;
+                int deltaPosId = 0;
+                //
+
                 for(int k = 0; k < resultSet.size(); k++){
-                    out.writeInt(resultSet.get(k).getDocId());
-                    if(minimalGapListSize <= resultSet.size() && k % gapSize == 0 && k + gapSize < resultSet.size()){
-                        int gapBytes = 0;
-                        for(int m = k; m < k + gapSize; m++){
-                            gapBytes += Float.BYTES + Integer.BYTES + resultSet.get(m).getPositionsSize() * Integer.BYTES + Integer.BYTES;
+                    if(minimalGapListSize <= resultSet.size() && k % gapSize == 0){
+                        if (k + gapSize < resultSet.size()) {
+                            out.writeInt(resultSet.get(k).getDocId());
+                            previousDocId = resultSet.get(k).getDocId();
+                            int gapBytes = 0;
+                            for (int m = k; m < k + gapSize; m++) {
+                                gapBytes += Float.BYTES + Integer.BYTES + resultSet.get(m).getPositionsSize() * Integer.BYTES + Integer.BYTES;
+                            }
+                            countGaps++;
+                            out.writeInt(gapBytes - Integer.BYTES);//исключаем последний docid - так как перепрыгнуть нам нужно к нему
+                        } else {
+                            out.writeInt(resultSet.get(k).getDocId());
+                            previousDocId = resultSet.get(k).getDocId();
                         }
-                        countGaps++;
-                        out.writeInt(gapBytes - Integer.BYTES);//исключаем последний docid - так как перепрыгнуть нам нужно к нему
+                    } else {
+                        deltaDocId = resultSet.get(k).getDocId() - previousDocId;
+                        out.writeInt(deltaDocId);
+                        previousDocId = resultSet.get(k).getDocId();
                     }
                     out.writeFloat((float)(IDF * resultSet.get(k).calculateIf()));
                     out.writeInt(resultSet.get(k).getPositionsSize());
+                    previousPosition = 0;
                     for(int i = resultSet.get(k).getPositionsSize() - 1; i >= 0; i-- ){//обратный обход для восстановления порядка возрастания позиций
-                        out.writeInt(resultSet.get(k).getPositions().get(i));
+                        deltaPosId = resultSet.get(k).getPositions().get(i) - previousPosition;
+                        out.writeInt(deltaPosId);
+                        previousPosition = resultSet.get(k).getPositions().get(i);
                     }
                 }
                 if(countGaps != gapsBytes / Integer.BYTES){

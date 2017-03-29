@@ -72,65 +72,71 @@ public class IndexSearcher {
             gapsSize.add((int)(Math.sqrt(docsSize.get(i))));
         }
 
-        intersectionCycle:
-        while(true){
+        try {
 
-            int minId = currentDoc.stream().min(Integer::compareTo).get();
-            int maxId = currentDoc.stream().max(Integer::compareTo).get();
+            intersectionCycle:
+            while (true) {
 
-            List<Integer> indexesWithMinId = new LinkedList<>();
-            for (int i = 0; i < currentDoc.size(); i++) {
-                if (currentDoc.get(i) == minId) {
-                    indexesWithMinId.add(i);
+                int minId = currentDoc.stream().min(Integer::compareTo).get();
+                int maxId = currentDoc.stream().max(Integer::compareTo).get();
+
+                List<Integer> indexesWithMinId = new LinkedList<>();
+                for (int i = 0; i < currentDoc.size(); i++) {
+                    if (currentDoc.get(i) == minId) {
+                        indexesWithMinId.add(i);
+                    }
                 }
+
+                for (int i : indexesWithMinId) {
+                    if (minimalGapListSize <= docsSize.get(i) && iter.get(i) % gapsSize.get(i) == 0 && iter.get(i) + gapsSize.get(i) < docsSize.get(i)) {
+                        int gapBytes = buffers.get(i).getInt();
+                        int docIdOnGap = buffers.get(i).getInt(buffers.get(i).position() + gapBytes);
+                        if (docIdOnGap < maxId) {
+                            currentDoc.set(i, docIdOnGap);
+                            buffers.get(i).position(buffers.get(i).position() + gapBytes + Integer.BYTES);
+                            iter.set(i, iter.get(i) + gapsSize.get(i));// -1 ?
+                            continue intersectionCycle;
+                        }
+                    }
+                }
+
+                if (indexesWithMinId.size() == words.size()) {
+                    for (int i = 0; i < buffers.size(); i++) {
+                        float tfIdf = buffers.get(i).getFloat();
+                        int posSize = buffers.get(i).getInt();
+                        List<Integer> positions = new ArrayList<>(posSize);
+                        for (int j = 0; j < posSize; j++) {
+                            positions.add(buffers.get(i).getInt());
+                        }
+                        IndexDocumentRecord idr = new IndexDocumentRecord(currentDoc.get(i), tfIdf, positions);
+                        quoteDocs.get(i).put(currentDoc.get(i), idr);
+                        if (!buffers.get(i).hasRemaining()) {
+                            break intersectionCycle;
+                        }
+
+                        iter.set(i, iter.get(i) + 1);
+                        currentDoc.set(i, buffers.get(i).getInt());
+
+                    }
+                } else {
+                    for (int minIndex : indexesWithMinId) {
+                        buffers.get(minIndex).getFloat();
+                        int posSize = buffers.get(minIndex).getInt();
+                        buffers.get(minIndex).position(buffers.get(minIndex).position() + posSize * Integer.BYTES);
+
+                        if (!buffers.get(minIndex).hasRemaining()) {
+                            break intersectionCycle;
+                        }
+                        iter.set(minIndex, iter.get(minIndex) + 1);
+
+                        currentDoc.set(minIndex, buffers.get(minIndex).getInt());
+                    }
+                }
+
             }
 
-            for(int i : indexesWithMinId){
-                if(minimalGapListSize <= docsSize.get(i) && iter.get(i) % gapsSize.get(i) == 0 && iter.get(i) + gapsSize.get(i) < docsSize.get(i)){
-                    int gapBytes = buffers.get(i).getInt();
-                    int docIdOnGap = buffers.get(i).getInt(buffers.get(i).position() + gapBytes);
-                    if(docIdOnGap < maxId){
-                        currentDoc.set(i,docIdOnGap);
-                        buffers.get(i).position(buffers.get(i).position() + gapBytes + Integer.BYTES);
-                        iter.set(i,iter.get(i) + gapsSize.get(i));// -1 ?
-                        continue intersectionCycle;
-                    }
-                }
-            }
-
-            if (indexesWithMinId.size() == words.size()){
-                for(int i = 0; i < buffers.size(); i++){
-                    float tfIdf = buffers.get(i).getFloat();
-                    int posSize = buffers.get(i).getInt();
-                    List<Integer> positions = new ArrayList<>(posSize);
-                    for (int j = 0; j < posSize; j++) {
-                        positions.add(buffers.get(i).getInt());
-                    }
-                    IndexDocumentRecord idr = new IndexDocumentRecord(currentDoc.get(i),tfIdf,positions);
-                    quoteDocs.get(i).put(currentDoc.get(i),idr);
-                    if(!buffers.get(i).hasRemaining()){
-                        break intersectionCycle;
-                    }
-
-                    iter.set(i,iter.get(i) + 1);
-                    currentDoc.set(i,buffers.get(i).getInt());
-
-                }
-            } else {
-                for(int minIndex : indexesWithMinId){
-                    buffers.get(minIndex).getFloat();
-                    int posSize = buffers.get(minIndex).getInt();
-                    buffers.get(minIndex).position(buffers.get(minIndex).position() + posSize * Integer.BYTES);
-
-                    if(!buffers.get(minIndex).hasRemaining()){
-                        break intersectionCycle;
-                    }
-                    iter.set(minIndex,iter.get(minIndex) + 1);
-
-                    currentDoc.set(minIndex,buffers.get(minIndex).getInt());
-                }
-            }
-
+        } catch (IndexOutOfBoundsException iooe){
+            iooe.printStackTrace();
         }
         return quoteDocs;
     }

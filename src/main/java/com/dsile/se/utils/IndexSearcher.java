@@ -1,5 +1,6 @@
 package com.dsile.se.utils;
 
+import com.dsile.se.VariableByteCode;
 import com.dsile.se.dto.IndexDocumentRecord;
 import org.springframework.stereotype.Component;
 
@@ -13,7 +14,7 @@ import java.util.*;
 public class IndexSearcher {
 
     private HashMap<String, Integer> termDictionary = new HashMap<>();
-    private HashMap<Integer, Long> termIndexLinks = new HashMap<>();
+    private HashMap<Integer, Long[]> termIndexLinks = new HashMap<>();
     private HashMap<Integer, String> docsTitleMap = new HashMap<>();
     int minimalGapListSize = 50;
 
@@ -58,14 +59,16 @@ public class IndexSearcher {
 
         for(String word : words){
             RandomAccessFile memoryMappedFile = new RandomAccessFile(Constants.RESULT_INDEX_PATH, "r");
-            long place = termIndexLinks.get(termDictionary.get(word));
-            MappedByteBuffer in = memoryMappedFile.getChannel().map(FileChannel.MapMode.READ_ONLY, place, Integer.BYTES);
-            long bufferSize = in.getInt();
-            in = memoryMappedFile.getChannel().map(FileChannel.MapMode.READ_ONLY, place + Integer.BYTES, bufferSize);
+            if(termDictionary.get(word)==null){
+                return quoteDocs;
+            }
+            long place = termIndexLinks.get(termDictionary.get(word))[0];
+            long bufferSize = termIndexLinks.get(termDictionary.get(word))[1];
+            MappedByteBuffer in = memoryMappedFile.getChannel().map(FileChannel.MapMode.READ_ONLY, place , bufferSize);
             buffers.add(in);
             iter.add(0);
             docsSize.add(in.getInt());
-            currentDoc.add(in.getInt());
+            currentDoc.add(VariableByteCode.decode(in));
         }
 
         for(int i = 0; i < docsSize.size(); i++){
@@ -87,11 +90,12 @@ public class IndexSearcher {
 
             for(int i : indexesWithMinId){
                 if(minimalGapListSize <= docsSize.get(i) && iter.get(i) % gapsSize.get(i) == 0 && iter.get(i) + gapsSize.get(i) < docsSize.get(i)){
-                    int gapBytes = buffers.get(i).getInt();
-                    int docIdOnGap = buffers.get(i).getInt(buffers.get(i).position() + gapBytes);
+                    int gapBytes = VariableByteCode.decode(buffers.get(i));
+                    int docIdOnGap = VariableByteCode.decode(buffers.get(i),buffers.get(i).position() + gapBytes);
                     if(docIdOnGap < maxId){
                         currentDoc.set(i,docIdOnGap);
-                        buffers.get(i).position(buffers.get(i).position() + gapBytes + Integer.BYTES);
+                        buffers.get(i).position(buffers.get(i).position() + gapBytes);
+                        VariableByteCode.decode(buffers.get(i)); //пропускаем айдишник доумента
                         iter.set(i,iter.get(i) + gapsSize.get(i));// -1 ?
                         continue intersectionCycle;
                     }
@@ -101,14 +105,15 @@ public class IndexSearcher {
             if (indexesWithMinId.size() == words.size()){
                 for(int i = 0; i < buffers.size(); i++){
                     float tfIdf = buffers.get(i).getFloat();
-                    int posSize = buffers.get(i).getInt();
+                    int posSize = VariableByteCode.decode(buffers.get(i));
                     int prevPosId = 0;
                     int deltaPosId = 0;
-                    List<Integer> positions = new ArrayList<>(posSize);
-                    for (int j = 0; j < posSize; j++) {
-                        deltaPosId = buffers.get(i).getInt();
+                    List<Integer> positions = new ArrayList<>();
+                    int currByte = buffers.get(i).position();
+                    while (buffers.get(i).position() < currByte + posSize) {
+                        deltaPosId = VariableByteCode.decode(buffers.get(i));
                         positions.add(deltaPosId + prevPosId);
-                        prevPosId = positions.get(j);
+                        prevPosId = positions.get(positions.size() - 1);
                     }
                     IndexDocumentRecord idr = new IndexDocumentRecord(currentDoc.get(i),tfIdf,positions);
                     quoteDocs.get(i).put(currentDoc.get(i),idr);
@@ -119,16 +124,16 @@ public class IndexSearcher {
                     iter.set(i,iter.get(i) + 1);
 
                     if(minimalGapListSize <= docsSize.get(i) && iter.get(i) % gapsSize.get(i) == 0) {
-                        currentDoc.set(i, buffers.get(i).getInt());
+                        currentDoc.set(i, VariableByteCode.decode(buffers.get(i)));
                     } else {
-                        currentDoc.set(i, currentDoc.get(i) + buffers.get(i).getInt());
+                        currentDoc.set(i, currentDoc.get(i) + VariableByteCode.decode(buffers.get(i)));
                     }
                 }
             } else {
                 for(int minIndex : indexesWithMinId){
                     buffers.get(minIndex).getFloat();
-                    int posSize = buffers.get(minIndex).getInt();
-                    buffers.get(minIndex).position(buffers.get(minIndex).position() + posSize * Integer.BYTES);
+                    int posSize = VariableByteCode.decode(buffers.get(minIndex));
+                    buffers.get(minIndex).position(buffers.get(minIndex).position() + posSize);
 
                     if(!buffers.get(minIndex).hasRemaining()){
                         break intersectionCycle;
@@ -136,9 +141,9 @@ public class IndexSearcher {
                     iter.set(minIndex,iter.get(minIndex) + 1);
 
                     if(minimalGapListSize <= docsSize.get(minIndex) && iter.get(minIndex) % gapsSize.get(minIndex) == 0){
-                        currentDoc.set(minIndex,buffers.get(minIndex).getInt());
+                        currentDoc.set(minIndex, VariableByteCode.decode(buffers.get(minIndex)));
                     } else {
-                        currentDoc.set(minIndex, currentDoc.get(minIndex) + buffers.get(minIndex).getInt());
+                        currentDoc.set(minIndex, currentDoc.get(minIndex) +  VariableByteCode.decode(buffers.get(minIndex)));
                     }
                 }
             }
@@ -154,39 +159,48 @@ public class IndexSearcher {
             if (termDictionary.get(word) == null) {
                 return;
             }
-
-            long place = termIndexLinks.get(termDictionary.get(word));
-            MappedByteBuffer in = memoryMappedFile.getChannel().map(FileChannel.MapMode.READ_ONLY, place, Integer.BYTES);
-            long bufferSize = in.getInt();
-            in = memoryMappedFile.getChannel().map(FileChannel.MapMode.READ_ONLY, place + Integer.BYTES, bufferSize);
+            if(termDictionary.get(word) == null){
+                return;
+            }
+            long place = termIndexLinks.get(termDictionary.get(word))[0];
+            long bufferSize = termIndexLinks.get(termDictionary.get(word))[1];
+            MappedByteBuffer in = memoryMappedFile.getChannel().map(FileChannel.MapMode.READ_ONLY, place , bufferSize);
             List<Integer> positions = Collections.emptyList();
             int docsSetSize = in.getInt();
             int gapsSize = (int)(Math.sqrt(docsSetSize));
             int iter = 0;
             int docId = 0;
-            while (in.hasRemaining()) {
-                //такое условие из-за того, что прыжки установлены в строго определенных местах
-                if(minimalGapListSize <= docsSetSize && iter % gapsSize == 0){
-                    docId = in.getInt();
-                    if(iter + gapsSize < docsSetSize) {
-                        in.getInt();//прыжки тут не нужны, поэтому пропускаем
+            try {
+                while (in.hasRemaining()) {
+                    if(iter == 6850){
+                        System.out.println(iter);
                     }
-                } else {
-                    docId = in.getInt() + docId;
+                    //такое условие из-за того, что прыжки установлены в строго определенных местах
+                    if (minimalGapListSize <= docsSetSize && iter % gapsSize == 0) {
+                        docId = VariableByteCode.decode(in);
+                        if (iter + gapsSize < docsSetSize) {
+                            VariableByteCode.decode(in);//прыжки тут не нужны, поэтому пропускаем
+                        }
+                    } else {
+                        docId = VariableByteCode.decode(in) + docId;
+                    }
+
+                    float tfIdf = in.getFloat();
+                    int posSize = VariableByteCode.decode(in);
+                    in.position(in.position() + posSize);
+
+                    IndexDocumentRecord curRecord = newWord.get(docId);
+                    if (curRecord != null) {
+                        curRecord.sumTfIdf(tfIdf);
+                    } else {
+                        newWord.put(docId, new IndexDocumentRecord(docId, tfIdf, positions));
+                    }
+
+                    iter++;
                 }
-
-                float tfIdf = in.getFloat();
-                int posSize = in.getInt();
-                in.position(in.position() + posSize * Integer.BYTES);
-
-                IndexDocumentRecord curRecord = newWord.get(docId);
-                if (curRecord != null) {
-                    curRecord.sumTfIdf(tfIdf);
-                } else {
-                    newWord.put(docId, new IndexDocumentRecord(docId, tfIdf, positions));
-                }
-
-                iter++;
+            } catch (Exception e){
+                e.printStackTrace();
+                System.out.println("iteration: " + iter);
             }
 
             System.out.println("index: " + termDictionary.get(word) + " complete");
@@ -254,7 +268,7 @@ public class IndexSearcher {
                 }
                 System.out.println("titles loaded");
                 while(linkReader.available() > 0){
-                    termIndexLinks.put(linkReader.readInt(),linkReader.readLong());
+                    termIndexLinks.put(linkReader.readInt(),new Long[]{linkReader.readLong(),linkReader.readLong()});
                 }
                 System.out.println("links loaded");
             }

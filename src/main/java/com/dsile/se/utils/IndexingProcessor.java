@@ -1,5 +1,6 @@
 package com.dsile.se.utils;
 
+import com.dsile.se.VariableByteCode;
 import com.dsile.se.dto.IndexDocumentRecord;
 import com.dsile.se.dto.IndexTermRecord;
 import org.apache.commons.io.FileUtils;
@@ -29,7 +30,7 @@ public class IndexingProcessor {
     private static Pattern htmlTagsAndSymbolsRegex = Pattern.compile("(&lt;.*?&gt;|<.*?>|&amp(nbsp)?|&quot|&lt|&gt|[№\\.,()—;:\\[\\]\\{\\}\\*\\%\\\"\\'„“‘’«»\\#\\$\\+\\/\\\\!?…])");
     private static Pattern blockDocPattern = Pattern.compile("(\\d+) \\[(.*)\\]");
 
-    private static int oneBlockTerms = 1000000;
+    private static int oneBlockFiles = 30;
 
     //структура термID - мап<документ, <список позиций термы>>
     private TreeMap<Integer, HashMap<Integer, LinkedList<Integer>>> indexTmpMap = new TreeMap<>();
@@ -37,7 +38,7 @@ public class IndexingProcessor {
     private Integer lastTermId = 0;
     private Integer lastBlockId = 0;
     private HashMap<String, Integer> termDictionary = new HashMap<>();
-    private HashMap<Integer,Long> termIndexLinks = new HashMap<>();
+    private HashMap<Integer,Long[]> termIndexLinks = new HashMap<>();
     private HashMap<Integer,String> docsTitleMap = new HashMap<>();
     private HashMap<String, Integer> wordsRates = new HashMap<>();
 
@@ -83,7 +84,6 @@ public class IndexingProcessor {
                         } else {
                             rawLine = line.replaceAll(htmlTagsAndSymbolsRegex.pattern(), "");
                             for (String word : rawLine.split("[\\u00A0\\s\\uFFFC]+")) {
-                                i++;
                                 rawWord = word.toLowerCase();
                                 if (rawWord.isEmpty()) {
                                     continue;
@@ -123,33 +123,32 @@ public class IndexingProcessor {
                                     indexTmpMap.get(termId).get(docId).push(docWordIterator);
 
                                 }
-
-
-                                if (i % oneBlockTerms == 0) {
-                                    System.out.println("start block creating");
-                                    lastBlockId++;
-                                    try(DataOutputStream out = new DataOutputStream(new BufferedOutputStream(new FileOutputStream(new File(blockDir + blockName + lastBlockId))))){
-                                        for(Map.Entry<Integer, HashMap<Integer, LinkedList<Integer>>> entry : indexTmpMap.entrySet()){
-                                            out.writeInt(entry.getKey());
-                                            out.writeInt(entry.getValue().size());
-                                            for(Map.Entry<Integer, LinkedList<Integer>> documents : entry.getValue().entrySet()){
-                                                out.writeInt(documents.getKey());
-                                                out.writeInt(documents.getValue().size());
-                                                for(int position : documents.getValue()){
-                                                    out.writeInt(position);
-                                                }
-                                            }
-                                        }
-                                    }
-                                    System.out.println("block" + lastBlockId + " created!");
-                                    indexTmpMap.clear();
-                                }
                             }
                         }
                     }
+                    i++;
+                    if (i % oneBlockFiles == 0) {
+                        System.out.println("start block creating");
+                        lastBlockId++;
+                        try(DataOutputStream out = new DataOutputStream(new BufferedOutputStream(new FileOutputStream(new File(blockDir + blockName + lastBlockId))))){
+                            for(Map.Entry<Integer, HashMap<Integer, LinkedList<Integer>>> entry : indexTmpMap.entrySet()){
+                                out.writeInt(entry.getKey());
+                                out.writeInt(entry.getValue().size());
+                                for(Map.Entry<Integer, LinkedList<Integer>> documents : entry.getValue().entrySet()){
+                                    out.writeInt(documents.getKey());
+                                    out.writeInt(documents.getValue().size());
+                                    for(int position : documents.getValue()){
+                                        out.writeInt(position);
+                                    }
+                                }
+                            }
+                        }
+                        System.out.println("block" + lastBlockId + " created!");
+                        indexTmpMap.clear();
+                    }
                 }
                 System.out.println("Terms: " + termDictionary.size());
-                break dirCycle;
+                //break dirCycle;
             }
         }
         lastBlockId++;
@@ -220,13 +219,19 @@ public class IndexingProcessor {
                 for(int k = 0; k < positionsSize; k++){
                     positions.add(curIntput.readInt());
                 }
+                positions.sort(Integer::compareTo);
+                int prevPos = 0;
+                for(int k = 0; k < positionsSize; k++){
+                    positions.set(k,positions.get(k) - prevPos);
+                    prevPos = positions.get(k) + prevPos;
+                }
                 termRecord.addDocuments(new IndexDocumentRecord(docId,0,positions));
             }
             lines.add(termRecord);
             ids.add(0);
         }
 
-        try(DataOutputStream out = new DataOutputStream(new BufferedOutputStream(new FileOutputStream(new File(Constants.RESULT_INDEX_PATH))));
+        try(CounterDataOutputStream out = new CounterDataOutputStream(new DataOutputStream(new BufferedOutputStream(new FileOutputStream(new File(Constants.RESULT_INDEX_PATH)))));
             DataOutputStream linksOut = new DataOutputStream(new BufferedOutputStream(new FileOutputStream(new File(Constants.INDEX_LINKS_PATH))))) {
 
             long currentByte = 0;
@@ -271,57 +276,49 @@ public class IndexingProcessor {
                 double IDF = Math.log(((double)1_300_000)/resultSet.size());
                 int gapSize = (int)(Math.sqrt(resultSet.size()));
 
-                int sumOfPositionSizes = resultSet.stream().mapToInt(IndexDocumentRecord::getPositionsSize).sum();
-                int gapsBytes = minimalGapListSize > resultSet.size() ? 0 : Integer.BYTES * ((resultSet.size() - 1) / gapSize);
+                long bufferSize = out.size();
 
-                int bufferSize = (Integer.BYTES + Integer.BYTES + gapsBytes + resultSet.size() * (Integer.BYTES + Float.BYTES + Integer.BYTES) + Integer.BYTES * sumOfPositionSizes);
-
-                out.writeInt(bufferSize - Integer.BYTES);
+                //out.writeInt(bufferSize - Integer.BYTES);
                 out.writeInt(resultSet.size());
 
                 int countGaps = 0;
 
                 //for VB compression
                 int previousDocId = 0;
-                int previousPosition = 0;
                 int deltaDocId = 0;
-                int deltaPosId = 0;
-                //
 
                 for(int k = 0; k < resultSet.size(); k++){
                     if(minimalGapListSize <= resultSet.size() && k % gapSize == 0){
                         if (k + gapSize < resultSet.size()) {
-                            out.writeInt(resultSet.get(k).getDocId());
+                            out.write(VariableByteCode.encodeNumber(resultSet.get(k).getDocId()));
                             previousDocId = resultSet.get(k).getDocId();
                             int gapBytes = 0;
+                            int prevDocId = previousDocId;
                             for (int m = k; m < k + gapSize; m++) {
-                                gapBytes += Float.BYTES + Integer.BYTES + resultSet.get(m).getPositionsSize() * Integer.BYTES + Integer.BYTES;
+                                deltaDocId = resultSet.get(m+1).getDocId() - prevDocId;
+                                gapBytes += Float.BYTES + VariableByteCode.encodeNumber(VariableByteCode.encode(resultSet.get(m).getPositions()).length).length + VariableByteCode.encode(resultSet.get(m).getPositions()).length + VariableByteCode.encodeNumber(deltaDocId).length;
+                                prevDocId = resultSet.get(m+1).getDocId();
                             }
                             countGaps++;
-                            out.writeInt(gapBytes - Integer.BYTES);//исключаем последний docid - так как перепрыгнуть нам нужно к нему
+                            out.write(VariableByteCode.encodeNumber(gapBytes - VariableByteCode.encodeNumber(deltaDocId).length));//исключаем последний docid - так как перепрыгнуть нам нужно к нему
                         } else {
-                            out.writeInt(resultSet.get(k).getDocId());
+                            out.write(VariableByteCode.encodeNumber(resultSet.get(k).getDocId()));
                             previousDocId = resultSet.get(k).getDocId();
                         }
                     } else {
                         deltaDocId = resultSet.get(k).getDocId() - previousDocId;
-                        out.writeInt(deltaDocId);
+                        out.write(VariableByteCode.encodeNumber(deltaDocId));
                         previousDocId = resultSet.get(k).getDocId();
                     }
                     out.writeFloat((float)(IDF * resultSet.get(k).calculateIf()));
-                    out.writeInt(resultSet.get(k).getPositionsSize());
-                    previousPosition = 0;
-                    for(int i = resultSet.get(k).getPositionsSize() - 1; i >= 0; i-- ){//обратный обход для восстановления порядка возрастания позиций
-                        deltaPosId = resultSet.get(k).getPositions().get(i) - previousPosition;
-                        out.writeInt(deltaPosId);
-                        previousPosition = resultSet.get(k).getPositions().get(i);
+                    out.write(VariableByteCode.encodeNumber(VariableByteCode.encode(resultSet.get(k).getPositions()).length));
+                    for(int i = 0; i < resultSet.get(k).getPositionsSize(); i++ ){//обратный обход для восстановления порядка возрастания позиций
+                        out.write(VariableByteCode.encodeNumber(resultSet.get(k).getPositions().get(i)));
                     }
                 }
-                if(countGaps != gapsBytes / Integer.BYTES){
-                    System.out.println("Alarm: " + countGaps + " != " + gapsBytes/Integer.BYTES);
-                }
 
-                termIndexLinks.put(minId, currentByte);
+                bufferSize = out.size() - bufferSize;
+                termIndexLinks.put(minId, new Long[]{currentByte,bufferSize});
 
                 currentByte += bufferSize;
 
@@ -340,15 +337,22 @@ public class IndexingProcessor {
                         for(int k = 0; k < positionsSize; k++){
                             positions.add(curIntput.readInt());
                         }
+                        positions.sort(Integer::compareTo);
+                        int prevPos = 0;
+                        for(int k = 0; k < positionsSize; k++){
+                            positions.set(k,positions.get(k) - prevPos);
+                            prevPos = positions.get(k) + prevPos;
+                        }
                         termRecord.addDocuments(new IndexDocumentRecord(docId,0,positions));
                     }
                     lines.set(indexWithMinId, termRecord);
                 }
             }
 
-            for(Map.Entry<Integer,Long> e : termIndexLinks.entrySet()){
+            for(Map.Entry<Integer,Long[]> e : termIndexLinks.entrySet()){
                 linksOut.writeInt(e.getKey());
-                linksOut.writeLong(e.getValue());
+                linksOut.writeLong(e.getValue()[0]);
+                linksOut.writeLong(e.getValue()[1]);
             }
         }
     }
@@ -356,8 +360,8 @@ public class IndexingProcessor {
 
     public static void main(String[] args) throws IOException, ClassNotFoundException {
         IndexingProcessor processor = new IndexingProcessor();
-        processor.clearBlocksAndIndexes();
-        processor.process();
+        //processor.clearBlocksAndIndexes();
+        //processor.process();
         processor.mergeFiles();
     }
 
